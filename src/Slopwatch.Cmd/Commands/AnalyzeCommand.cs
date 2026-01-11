@@ -53,7 +53,7 @@ public sealed class AnalyzeCommand
     [Option('v', "verbose", HelpText = "Show verbose output including baseline loading details")]
     public bool Verbose { get; set; }
 
-    [Option("hook", HelpText = "Hook mode for Claude Code integration: outputs errors to stderr, suppresses other output, fails on warnings by default, exits with code 2 on failure")]
+    [Option("hook", HelpText = "Hook mode for Claude Code integration: only analyzes git dirty files for speed, outputs errors to stderr, suppresses other output, fails on warnings by default, exits with code 2 on failure")]
     public bool HookMode { get; set; }
 
     [Option("stats", HelpText = "Show analysis statistics (files analyzed, time elapsed)")]
@@ -164,7 +164,34 @@ public sealed class AnalyzeCommand
             // Determine what to analyze
             IAsyncEnumerable<DetectionResult> results;
 
-            if (Files is not null && Files.Any())
+            // In hook mode, only analyze dirty files from git status (much faster)
+            if (HookMode && Files is null)
+            {
+                var dirtyFiles = await GetDirtyFilesAsync(rootDirectory, cancellationToken);
+
+                if (dirtyFiles.Count == 0)
+                {
+                    // No dirty files, nothing to analyze
+                    return 0;
+                }
+
+                // Filter to only supported file types
+                var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj" };
+                var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".csproj" };
+                var filesToAnalyze = dirtyFiles
+                    .Where(f => supportedExtensions.Contains(Path.GetExtension(f)))
+                    .Where(File.Exists) // Skip deleted files
+                    .ToList();
+
+                if (filesToAnalyze.Count == 0)
+                {
+                    return 0;
+                }
+
+                filesAnalyzed = filesToAnalyze.Count;
+                results = analyzer.AnalyzeFilesAsync(filesToAnalyze, cancellationToken);
+            }
+            else if (Files is not null && Files.Any())
             {
                 // Analyze specific files
                 var filePaths = Files.Select(f => Path.GetFullPath(f)).ToList();
@@ -432,6 +459,79 @@ public sealed class AnalyzeCommand
             tracker.Track(result);
             yield return result;
         }
+    }
+
+    /// <summary>
+    /// Gets the list of dirty (modified, added, untracked) files from git status.
+    /// </summary>
+    /// <param name="rootDirectory">The root directory to run git status in.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of absolute file paths that are dirty in git.</returns>
+    private static async Task<List<string>> GetDirtyFilesAsync(string rootDirectory, CancellationToken cancellationToken)
+    {
+        var dirtyFiles = new List<string>();
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = "status --porcelain",
+                WorkingDirectory = rootDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return dirtyFiles;
+            }
+
+            var output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+
+            if (process.ExitCode != 0)
+            {
+                return dirtyFiles;
+            }
+
+            // Parse git status --porcelain output
+            // Format: XY filename (where XY is two-character status)
+            // Examples:
+            //  M src/file.cs       (modified in working tree)
+            // M  src/file.cs       (modified in index)
+            // ?? src/newfile.cs    (untracked)
+            // A  src/added.cs      (added to index)
+            foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (line.Length < 3)
+                    continue;
+
+                // Skip the two-character status and space
+                var relativePath = line.Substring(3).Trim();
+
+                // Handle renamed files (format: "old -> new")
+                if (relativePath.Contains(" -> "))
+                {
+                    relativePath = relativePath.Split(" -> ")[1];
+                }
+
+                // Convert to absolute path
+                var absolutePath = Path.GetFullPath(Path.Combine(rootDirectory, relativePath));
+                dirtyFiles.Add(absolutePath);
+            }
+        }
+        catch (Exception)
+        {
+            // If git fails for any reason (not installed, not a repo, etc.),
+            // return empty list so slopwatch falls back to full analysis
+            return dirtyFiles;
+        }
+
+        return dirtyFiles;
     }
 
     /// <summary>
