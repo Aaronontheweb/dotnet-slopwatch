@@ -4,7 +4,11 @@
     <TargetFramework>$(NetCoreVersion)</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Description>Core library for detecting LLM-generated "sloppy" code patterns in .NET projects</Description>
+    <Description>Core library for detecting LLM-generated "sloppy" code patterns in .NET projects. Use this library to build custom detection rules, IDE extensions, or integrate slopwatch into your own analysis pipelines.</Description>
+
+    <!-- NuGet package configuration -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Slopwatch</PackageId>
   </PropertyGroup>
 
   <ItemGroup>

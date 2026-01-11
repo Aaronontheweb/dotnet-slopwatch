@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Copyright>Copyright © 2025-$([System.DateTime]::Now.Year) Stannard Labs</Copyright>
+    <Copyright>Copyright © 2025-$([System.DateTime]::Now.Year) Aaron Stannard</Copyright>
     <Authors>Aaron Stannard</Authors>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <LangVersion>latest</LangVersion>

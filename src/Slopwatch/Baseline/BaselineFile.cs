@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------
-// <copyright file="BaselineFile.cs" company="Petabridge, LLC">
-//     Copyright (C) 2025 - 2025 Petabridge, LLC
+// <copyright file="BaselineFile.cs" company="Aaron Stannard">
+//     Copyright (C) 2025 - 2025 Aaron Stannard
 // </copyright>
 // -----------------------------------------------------------------------
 
