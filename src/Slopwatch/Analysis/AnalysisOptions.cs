@@ -51,7 +51,9 @@ public sealed class AnalysisOptions
         "**/*.Designer.cs",
         "**/*.generated.cs",
         "**/*.g.cs",
-        "**/*.g.i.cs"
+        "**/*.g.i.cs",
+        // Git worktrees - avoid analyzing the same code multiple times
+        "**/worktrees/**"
     };
 
     /// <summary>
