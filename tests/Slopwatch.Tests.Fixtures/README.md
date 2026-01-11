@@ -39,8 +39,7 @@ Contains examples of:
 - Completely empty `catch` blocks
 - Catch blocks with only comments
 - Catch blocks that only log without rethrowing
-- Overly broad exception catches (`catch(Exception)`, `catch` without type)
-- Proper exception handling patterns
+- Proper exception handling patterns (including `catch(Exception)` with actual handling)
 - Valid suppressions for optional configuration files and cleanup code
 
 ### TimeoutJigglingSamples.cs
