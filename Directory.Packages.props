@@ -2,7 +2,6 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!-- Nuget package versions -->
-    <LibGit2SharpVersion>0.31.0</LibGit2SharpVersion>
     <RoslynVersion>4.13.0</RoslynVersion>
     <CommandLineParserVersion>2.9.1</CommandLineParserVersion>
     <FileSystemGlobbingVersion>9.0.0</FileSystemGlobbingVersion>
@@ -13,7 +12,6 @@
   </PropertyGroup>
   <!-- App dependencies -->
   <ItemGroup>
-    <PackageVersion Include="LibGit2Sharp" Version="$(LibGit2SharpVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(RoslynVersion)" />
     <PackageVersion Include="CommandLineParser" Version="$(CommandLineParserVersion)" />
     <PackageVersion Include="Microsoft.Extensions.FileSystemGlobbing" Version="$(FileSystemGlobbingVersion)" />
