@@ -74,9 +74,9 @@ public class EmptyCatchSamples
         }
     }
 
-    // SHOULD TRIGGER: SW003 (Warning severity)
-    // Overly broad catch - catches all exceptions
-    public void BroadExceptionCatch_ShouldTrigger()
+    // SHOULD NOT TRIGGER (has actual handling)
+    // Broad exception catch with actual handling is legitimate
+    public void BroadExceptionCatch_WithHandling_ShouldNotTrigger()
     {
         try
         {
@@ -85,15 +85,14 @@ public class EmptyCatchSamples
         }
         catch (Exception)
         {
-            // Catching System.Exception is too broad
-            // Should catch specific exceptions
+            // Has actual handling code - this is legitimate for top-level handlers
             Console.WriteLine("Something went wrong");
         }
     }
 
-    // SHOULD TRIGGER: SW003 (Warning severity)
-    // Catch without type specification (catches everything)
-    public void CatchAllExceptions_ShouldTrigger()
+    // SHOULD NOT TRIGGER (has actual handling)
+    // Catch without type but with actual handling
+    public void CatchAll_WithHandling_ShouldNotTrigger()
     {
         try
         {
@@ -101,7 +100,7 @@ public class EmptyCatchSamples
         }
         catch
         {
-            // Catches absolutely everything, even non-CLR exceptions
+            // Has actual handling code
             Debug.WriteLine("Error suppressed");
         }
     }

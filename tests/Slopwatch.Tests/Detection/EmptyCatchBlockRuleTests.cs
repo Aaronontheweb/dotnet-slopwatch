@@ -146,9 +146,9 @@ public class TestClass
     }
 
     [Fact]
-    public void Test_DetectsBroadCatchException()
+    public void Test_IgnoresBroadCatchWithHandling()
     {
-        // Arrange
+        // Arrange - catch(Exception) with actual handling is legitimate
         const string code = @"
 public class TestClass
 {
@@ -172,18 +172,15 @@ public class TestClass
         // Act
         var results = RunRule(context);
 
-        // Assert
-        var result = Assert.Single(results);
-        Assert.Equal("SW003", result.RuleId);
-        Assert.Contains("overly broad exception type", result.Message);
-        Assert.Contains("Exception", result.Message);
-        Assert.Equal(DetectionSeverity.Warning, result.Severity);
+        // Assert - Catching Exception with actual handling code is NOT flagged
+        // This is a legitimate pattern for top-level handlers, plugin systems, etc.
+        Assert.Empty(results);
     }
 
     [Fact]
-    public void Test_DetectsCatchWithoutType()
+    public void Test_IgnoresCatchWithoutTypeButWithHandling()
     {
-        // Arrange
+        // Arrange - catch without type but with actual handling is legitimate
         const string code = @"
 public class TestClass
 {
@@ -207,11 +204,8 @@ public class TestClass
         // Act
         var results = RunRule(context);
 
-        // Assert
-        var result = Assert.Single(results);
-        Assert.Equal("SW003", result.RuleId);
-        Assert.Contains("overly broad exception type", result.Message);
-        Assert.Contains("all exceptions", result.Message);
+        // Assert - bare catch with actual handling code is NOT flagged
+        Assert.Empty(results);
     }
 
     [Fact]
@@ -427,9 +421,9 @@ public class TestClass
     }
 
     [Fact]
-    public void Test_DetectsSystemException()
+    public void Test_IgnoresSystemExceptionWithHandling()
     {
-        // Arrange
+        // Arrange - System.Exception with actual handling is legitimate
         const string code = @"
 public class TestClass
 {
@@ -453,16 +447,14 @@ public class TestClass
         // Act
         var results = RunRule(context);
 
-        // Assert
-        var result = Assert.Single(results);
-        Assert.Equal("SW003", result.RuleId);
-        Assert.Contains("overly broad", result.Message);
+        // Assert - System.Exception with actual handling code is NOT flagged
+        Assert.Empty(results);
     }
 
     [Fact]
     public void Test_IgnoresCatchWithOtherStatements()
     {
-        // Arrange
+        // Arrange - catch with logging AND other statements is proper handling
         const string code = @"
 public class TestClass
 {
@@ -488,11 +480,9 @@ public class TestClass
         // Act
         var results = RunRule(context);
 
-        // Assert
-        // Should still detect broad Exception type, but not as logging-only
-        var result = Assert.Single(results);
-        Assert.DoesNotContain("only logs", result.Message);
-        Assert.Contains("overly broad", result.Message);
+        // Assert - catch with logging + other handling is NOT flagged
+        // The rule only flags empty catches and logging-only catches (without rethrow)
+        Assert.Empty(results);
     }
 
     [Fact]

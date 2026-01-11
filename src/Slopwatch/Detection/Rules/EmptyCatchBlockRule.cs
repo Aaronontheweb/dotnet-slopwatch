@@ -7,7 +7,7 @@ using Slopwatch.Suppression;
 namespace Slopwatch.Detection.Rules;
 
 /// <summary>
-/// Detects empty or overly broad catch blocks that swallow exceptions.
+/// Detects empty catch blocks that swallow exceptions.
 /// Rule ID: SW003
 /// </summary>
 /// <remarks>
@@ -16,7 +16,6 @@ namespace Slopwatch.Detection.Rules;
 /// <item><description>Are completely empty</description></item>
 /// <item><description>Only contain comments</description></item>
 /// <item><description>Only log without rethrowing or handling</description></item>
-/// <item><description>Use overly broad exception types (catch(Exception) or catch with no type)</description></item>
 /// </list>
 ///
 /// Empty catch blocks often indicate:
@@ -26,6 +25,10 @@ namespace Slopwatch.Detection.Rules;
 /// <item><description>Lazy exception handling that should be improved</description></item>
 /// <item><description>Security issues being hidden</description></item>
 /// </list>
+///
+/// Note: This rule does NOT flag catch blocks that catch broad exception types (like Exception)
+/// as long as they contain actual handling code. Catching Exception is a legitimate pattern
+/// for top-level handlers, plugin systems, and graceful degradation scenarios.
 ///
 /// This rule can be suppressed with <see cref="SlopwatchSuppressAttribute"/> when there's
 /// a legitimate reason for an empty catch block (e.g., optional configuration files, benign exceptions).
@@ -40,7 +43,7 @@ public sealed class EmptyCatchBlockRule : IDetectionRule
 
     /// <inheritdoc />
     public string Description =>
-        "Detects empty or overly broad catch blocks that swallow exceptions without proper handling. " +
+        "Detects empty catch blocks that swallow exceptions without proper handling. " +
         "Exceptions should be handled appropriately or allowed to propagate.";
 
     /// <inheritdoc />
@@ -114,24 +117,6 @@ public sealed class EmptyCatchBlockRule : IDetectionRule
                     GetCatchSnippet(catchClause),
                     "Consider rethrowing the exception or handling it appropriately"
                 );
-                continue;
-            }
-
-            // Check for overly broad exception types
-            if (IsOverlyBroadCatch(catchClause))
-            {
-                var exceptionType = GetExceptionType(catchClause);
-                yield return new DetectionResult(
-                    RuleId,
-                    Name,
-                    DetectionSeverity.Warning, // Lower severity for broad catches
-                    context.FilePath,
-                    lineNumber,
-                    location.StartLinePosition.Character + 1,
-                    $"Catch block uses overly broad exception type: {exceptionType}",
-                    GetCatchSnippet(catchClause),
-                    "Consider catching specific exception types instead of broad Exception"
-                );
             }
         }
     }
@@ -199,33 +184,6 @@ public sealed class EmptyCatchBlockRule : IDetectionRule
 
         // Only flag if it's logging only without rethrow or other handling
         return hasLogging && !hasRethrow && !hasOtherStatements;
-    }
-
-    /// <summary>
-    /// Checks if catch block uses overly broad exception types
-    /// </summary>
-    private static bool IsOverlyBroadCatch(CatchClauseSyntax catchClause)
-    {
-        // catch without type specification catches everything
-        if (catchClause.Declaration is null)
-            return true;
-
-        var exceptionType = catchClause.Declaration.Type.ToString();
-
-        // Check for System.Exception or just Exception
-        return exceptionType == "Exception" ||
-               exceptionType == "System.Exception";
-    }
-
-    /// <summary>
-    /// Gets the exception type being caught
-    /// </summary>
-    private static string GetExceptionType(CatchClauseSyntax catchClause)
-    {
-        if (catchClause.Declaration is null)
-            return "all exceptions";
-
-        return catchClause.Declaration.Type.ToString();
     }
 
     /// <summary>
