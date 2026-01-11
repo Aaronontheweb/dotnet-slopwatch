@@ -44,11 +44,29 @@ jobs:
       - name: "dotnet build"
         run: dotnet build -c Release
 
-      # .NET Framework tests can't run reliably on Linux, so we only do .NET 8
-
+      # Run tests with coverage
       - name: "dotnet test"
         shell: bash
-        run: dotnet test -c Release 
+        run: dotnet test -c Release --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+      - name: "Upload coverage reports"
+        uses: codecov/codecov-action@v5
+        with:
+          directory: ./coverage
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: "dotnet pack"
         run: dotnet pack -c Release -o ./bin/nuget
+
+      # Dogfooding - run slopwatch on itself
+      - name: "Install slopwatch tool (dogfooding)"
+        if: matrix.os == 'ubuntu-latest'
+        run: dotnet tool install --global --add-source ./bin/nuget Slopwatch.Cmd
+
+      - name: "Run slopwatch on itself"
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          # Check current directory for slop patterns (dogfooding)
+          slopwatch analyze -d . --fail-on error

@@ -34,27 +34,22 @@ jobs:
       run: |
         ./build.ps1
 
+    - name: "Build and run tests"
+      run: dotnet test -c Release
+
     - name: Create Packages
       run:  dotnet pack /p:PackageVersion=${{ github.ref_name }} -c Release -o ./output
 
-    - name: Push Packages
-      run: dotnet nuget push "output/*.nupkg" -k ${{ secrets.NUGET_KEY }} -s https://api.nuget.org/v3/index.json
+    - name: Push Packages to NuGet
+      run: dotnet nuget push "output/*.nupkg" --skip-duplicate -k ${{ secrets.NUGET_KEY }} -s https://api.nuget.org/v3/index.json
 
-    - name: release
-      uses: actions/create-release@v1
-      id: create_release
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
       with:
+        name: 'Slopwatch ${{ github.ref_name }}'
+        body_path: RELEASE_NOTES.md
+        files: 'output/*.nupkg'
         draft: false
         prerelease: false
-        release_name: 'Akka.Hosting ${{ github.ref_name }}'
-        tag_name: ${{ github.ref }}
-        body_path: RELEASE_NOTES.md
       env:
         GITHUB_TOKEN: ${{ github.token }}
-
-    - name: Upload Release Asset
-      uses: AButler/upload-release-assets@v3.0
-      with:
-          repo-token: ${{ github.token }}
-          release-tag: ${{ github.ref_name }}
-          files: 'output/*.nupkg'
