@@ -1,3 +1,14 @@
+#### 0.1.1 January 11th 2026 ####
+
+**New Features:**
+* Claude Code hook integration with `--hook` flag for exit code 2 on detection (PR #13)
+* `--verbose` flag to control baseline loading output visibility (PR #13)
+* `--stats` flag for performance metrics and analysis statistics (PR #14)
+
+**Bug Fixes:**
+* Fixed default glob pattern handling for CommandLineParser empty IEnumerable issue (PR #13)
+* Fixed path handling in SuppressionChecker to resolve relative paths correctly (PR #13)
+
 #### 0.1.0 January 11th 2026 ####
 
 Initial release of Slopwatch - LLM anti-cheat for .NET.

@@ -6,8 +6,15 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <VersionPrefix>0.1.0</VersionPrefix>
-    <PackageReleaseNotes>Initial development release</PackageReleaseNotes>
+    <VersionPrefix>0.1.1</VersionPrefix>
+    <PackageReleaseNotes>**New Features:**
+* Claude Code hook integration with `--hook` flag for exit code 2 on detection (PR #13)
+* `--verbose` flag to control baseline loading output visibility (PR #13)
+* `--stats` flag for performance metrics and analysis statistics (PR #14)
+
+**Bug Fixes:**
+* Fixed default glob pattern handling for CommandLineParser empty IEnumerable issue (PR #13)
+* Fixed path handling in SuppressionChecker to resolve relative paths correctly (PR #13)</PackageReleaseNotes>
   </PropertyGroup>
   <PropertyGroup>
     <!-- Target framework versions -->
