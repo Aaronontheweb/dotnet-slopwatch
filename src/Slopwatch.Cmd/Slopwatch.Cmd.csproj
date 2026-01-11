@@ -10,6 +10,9 @@
     <!-- dotnet tool configuration -->
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>slopwatch</ToolCommandName>
+
+    <!-- Allow running on newer .NET versions (e.g., .NET 10 when built for .NET 9) -->
+    <RollForward>LatestMajor</RollForward>
   </PropertyGroup>
 
   <ItemGroup>

@@ -69,4 +69,4 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           # Check current directory for slop patterns (dogfooding)
-          slopwatch analyze -d . --fail-on error
+          slopwatch analyze -d . --fail-on error --stats
