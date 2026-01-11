@@ -1,6 +1,22 @@
-# Slopwatch
+<p align="center">
+  <img src="https://raw.githubusercontent.com/stannardlabs/dotnet-slopwatch/dev/images/logo.png" alt="Slopwatch Logo" width="256" height="256">
+</p>
 
-A .NET tool that detects LLM "reward hacking" behaviors in code changes. Runs as a Claude Code hook or in CI/CD pipelines to catch when AI coding assistants take shortcuts instead of properly fixing issues.
+<h1 align="center">Slopwatch</h1>
+
+<p align="center">
+  <strong>// LLM anti-cheat</strong><br>
+  A .NET tool that detects LLM "reward hacking" behaviors in code changes.
+</p>
+
+<p align="center">
+  <a href="https://www.nuget.org/packages/Slopwatch.Cmd"><img src="https://img.shields.io/nuget/v/Slopwatch.Cmd.svg" alt="NuGet"></a>
+  <a href="https://github.com/stannardlabs/dotnet-slopwatch/blob/dev/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
+</p>
+
+---
+
+Runs as a Claude Code hook or in CI/CD pipelines to catch when AI coding assistants take shortcuts instead of properly fixing issues.
 
 ## What is "Slop"?
 
