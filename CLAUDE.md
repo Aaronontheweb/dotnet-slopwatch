@@ -64,7 +64,7 @@ tests/
 ## Claude Code Hook Integration
 The tool can run as a Claude Code hook:
 ```bash
-dotnet slopwatch analyze --working-tree --output json --fail-on error
+slopwatch analyze --working-tree --output json --fail-on error
 ```
 
 Hook configuration goes in `.claude/hooks/` or project-level hooks.

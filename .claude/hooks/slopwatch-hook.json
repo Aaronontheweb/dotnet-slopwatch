@@ -3,7 +3,7 @@
     "Stop": [
       {
         "type": "command",
-        "command": "dotnet slopwatch analyze -d . --output json --fail-on error",
+        "command": "slopwatch analyze -d . --output json --fail-on error",
         "timeout": 60
       }
     ]

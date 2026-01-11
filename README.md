@@ -137,7 +137,7 @@ Add slopwatch as a hook to catch slop patterns during AI-assisted coding. Create
     "Stop": [
       {
         "type": "command",
-        "command": "dotnet slopwatch analyze -d . --output json --fail-on error",
+        "command": "slopwatch analyze -d . --output json --fail-on error",
         "timeout": 60
       }
     ]
