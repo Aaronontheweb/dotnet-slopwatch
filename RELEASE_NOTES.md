@@ -1,3 +1,19 @@
+#### 0.2.0 January 11th 2026 ####
+
+**Performance Improvements:**
+* Hook mode now uses `git status` to analyze only dirty files - near-instant analysis (~340ms vs ~16s on large repos) (PR #20)
+* Parallel analysis with Akka.Streams for CI/CD mode - 2.4x speedup on large codebases (6.62s vs 15.89s on Akka.NET's 2225 files) (PR #22)
+* New `--parallel` flag to control parallelism (default = processor count, 0 = sequential) (PR #22)
+* Parallel analysis activates automatically when analyzing >50 files (PR #22)
+
+**Bug Fixes:**
+* Fixed bug where hook mode git status optimization wasn't triggering due to CommandLineParser initializing IEnumerable to empty instead of null (PR #21)
+* Git worktrees now excluded from analysis by default to prevent duplicate scanning (PR #19)
+* SW003 rule no longer flags legitimate `catch(Exception)` blocks with actual handling code - only empty catches and logging-only catches are flagged (PR #18, fixes #17)
+
+**Compatibility:**
+* Added `RollForward=LatestMajor` to allow running on newer .NET versions (PR #16)
+
 #### 0.1.1 January 11th 2026 ####
 
 **New Features:**
