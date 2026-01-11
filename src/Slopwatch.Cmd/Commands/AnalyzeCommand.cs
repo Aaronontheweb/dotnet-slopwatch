@@ -147,6 +147,7 @@ public sealed class AnalyzeCommand
         yield return new WarningSuppressRule();
         yield return new EmptyCatchBlockRule();
         yield return new TimeoutJigglingRule();
+        yield return new ProjectFileRule();
     }
 
     private IOutputFormatter CreateOutputFormatter()

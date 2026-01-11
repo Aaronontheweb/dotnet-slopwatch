@@ -24,7 +24,8 @@ public sealed class ListRulesCommand
                 new DisabledTestRule(),
                 new WarningSuppressRule(),
                 new EmptyCatchBlockRule(),
-                new TimeoutJigglingRule()
+                new TimeoutJigglingRule(),
+                new ProjectFileRule()
             };
 
             Console.WriteLine("Available Detection Rules:");
