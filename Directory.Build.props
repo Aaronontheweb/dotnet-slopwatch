@@ -21,7 +21,7 @@
   <!-- NuGet package properties -->
   <PropertyGroup>
     <PackageTags>slopwatch;llm;code-quality;linter;dotnet-tool;ai-safety</PackageTags>
-    <PackageProjectUrl>https://github.com/stannardlabs/dotnet-slopwatch</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/Aaronontheweb/dotnet-slopwatch</PackageProjectUrl>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>logo.png</PackageIcon>

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/stannardlabs/dotnet-slopwatch/dev/images/logo.png" alt="Slopwatch Logo" width="256" height="256">
+  <img src="https://raw.githubusercontent.com/Aaronontheweb/dotnet-slopwatch/dev/images/logo.png" alt="Slopwatch Logo" width="256" height="256">
 </p>
 
 <h1 align="center">Slopwatch</h1>
@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://www.nuget.org/packages/Slopwatch.Cmd"><img src="https://img.shields.io/nuget/v/Slopwatch.Cmd.svg" alt="NuGet"></a>
-  <a href="https://github.com/stannardlabs/dotnet-slopwatch/blob/dev/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
+  <a href="https://github.com/Aaronontheweb/dotnet-slopwatch/blob/dev/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
 </p>
 
 ---
