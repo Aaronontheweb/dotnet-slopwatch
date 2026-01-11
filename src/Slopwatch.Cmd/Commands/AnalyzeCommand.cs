@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CommandLine;
 using Slopwatch.Analysis;
 using Slopwatch.Baseline;
@@ -55,12 +56,18 @@ public sealed class AnalyzeCommand
     [Option("hook", HelpText = "Hook mode for Claude Code integration: outputs errors to stderr, suppresses other output, fails on warnings by default, exits with code 2 on failure")]
     public bool HookMode { get; set; }
 
+    [Option("stats", HelpText = "Show analysis statistics (files analyzed, time elapsed)")]
+    public bool ShowStats { get; set; }
+
     /// <summary>
     /// Executes the analyze command.
     /// </summary>
     /// <returns>Exit code: 0 = success, 1 = issues found (normal mode), 2 = issues found (hook mode) or error</returns>
     public async Task<int> ExecuteAsync(CancellationToken cancellationToken = default)
     {
+        var stopwatch = ShowStats ? Stopwatch.StartNew() : null;
+        var filesAnalyzed = 0;
+
         try
         {
             // Validate mutually exclusive options
@@ -172,6 +179,7 @@ public sealed class AnalyzeCommand
                     }
                 }
 
+                filesAnalyzed = filePaths.Count;
                 results = analyzer.AnalyzeFilesAsync(filePaths, cancellationToken);
             }
             else
@@ -185,7 +193,18 @@ public sealed class AnalyzeCommand
 
                 // CommandLineParser initializes IEnumerable to empty (not null), so check Any()
                 var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj" };
-                results = analyzer.AnalyzeDirectoryAsync(rootDirectory, patterns, cancellationToken);
+
+                // For stats, we need to enumerate files first to get count
+                if (ShowStats)
+                {
+                    var fileList = analyzer.GetMatchingFiles(rootDirectory, patterns).ToList();
+                    filesAnalyzed = fileList.Count;
+                    results = analyzer.AnalyzeFilesAsync(fileList, cancellationToken);
+                }
+                else
+                {
+                    results = analyzer.AnalyzeDirectoryAsync(rootDirectory, patterns, cancellationToken);
+                }
             }
 
             // Handle --create-baseline mode
@@ -224,6 +243,14 @@ public sealed class AnalyzeCommand
 
             // Format and output results
             await formatter.FormatAsync(trackedResults, Console.Out, cancellationToken);
+
+            // Output stats if requested
+            if (ShowStats && stopwatch is not null)
+            {
+                stopwatch.Stop();
+                await Console.Error.WriteLineAsync();
+                await Console.Error.WriteLineAsync($"Stats: {filesAnalyzed} files analyzed in {stopwatch.Elapsed.TotalSeconds:F2}s");
+            }
 
             // Determine exit code (1 = issues found in normal mode)
             return issueTracker.ShouldFail ? 1 : 0;
