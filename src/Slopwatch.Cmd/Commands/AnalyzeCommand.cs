@@ -52,8 +52,8 @@ public sealed class AnalyzeCommand
     [Option('v', "verbose", HelpText = "Show verbose output including baseline loading details")]
     public bool Verbose { get; set; }
 
-    [Option("hook", HelpText = "Hook mode for Claude Code integration: outputs errors to stderr, suppresses other output, exits with code 2 on failure")]
-    public bool HookMode { get; set; }
+    [Option("hook", Default = null, HelpText = "Hook mode for Claude Code integration: outputs errors to stderr, suppresses other output, exits with code 2 on failure. Optionally specify severity: warning (default), error")]
+    public string? HookMode { get; set; }
 
     /// <summary>
     /// Executes the analyze command.
@@ -207,9 +207,11 @@ public sealed class AnalyzeCommand
             }
 
             // Hook mode: collect results, output to stderr, exit with code 2 on failure
-            if (HookMode)
+            // Hook mode defaults to warning severity for stricter checking
+            if (HookMode is not null)
             {
-                return await ExecuteHookModeAsync(results, failOnSeverity, cancellationToken);
+                var hookSeverity = ParseHookSeverity(HookMode, failOnSeverity);
+                return await ExecuteHookModeAsync(results, hookSeverity, cancellationToken);
             }
 
             // Normal mode: format and output to stdout
@@ -390,6 +392,23 @@ public sealed class AnalyzeCommand
                 severity = default;
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Parses the hook mode severity. Defaults to warning if empty or invalid.
+    /// </summary>
+    private static DetectionSeverity ParseHookSeverity(string hookValue, DetectionSeverity fallback)
+    {
+        // Empty string means --hook was specified without a value, use warning default
+        if (string.IsNullOrWhiteSpace(hookValue))
+            return DetectionSeverity.Warning;
+
+        return hookValue.ToLowerInvariant() switch
+        {
+            "warning" => DetectionSeverity.Warning,
+            "error" => DetectionSeverity.Error,
+            _ => DetectionSeverity.Warning // Default to warning for invalid values
+        };
     }
 
     private static async IAsyncEnumerable<DetectionResult> TrackResultsAsync(

@@ -71,6 +71,10 @@ The `--hook` flag outputs errors to stderr, suppresses other output, and exits w
 
 Hook configuration goes in `.claude/settings.json` at the project level. Use `--verbose` flag if you want to see baseline loading details in normal mode.
 
+### Hook Severity Levels
+- `--hook` or `--hook warning` - Block on warnings and errors (default)
+- `--hook error` - Block only on errors (less strict)
+
 ### When Slopwatch Blocks Your Edit
 If you see "SLOPWATCH BLOCKED" in a hook error, your edit introduced a "reward hacking" pattern. These are shortcuts that make tests pass without fixing the real issue:
 

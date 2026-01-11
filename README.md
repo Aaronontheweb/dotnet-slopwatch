@@ -153,7 +153,12 @@ Add slopwatch as a hook to catch slop patterns during AI-assisted coding. Add th
 The `--hook` flag enables Claude Code integration mode which:
 - Outputs errors to stderr in a readable format
 - Suppresses all other output
+- Fails on warnings by default (strictest mode)
 - Exits with code 2 on failure (blocking the edit)
+
+You can optionally specify a severity level:
+- `--hook` or `--hook warning` - Block on warnings and errors (default, recommended)
+- `--hook error` - Block only on errors (less strict)
 
 Claude will see the formatted error message and can then fix the issue properly.
 
