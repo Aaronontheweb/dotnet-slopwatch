@@ -49,10 +49,16 @@ public sealed class AnalyzeCommand
     [Option("update-baseline", HelpText = "Add new detections to an existing baseline file")]
     public bool UpdateBaseline { get; set; }
 
+    [Option('v', "verbose", HelpText = "Show verbose output including baseline loading details")]
+    public bool Verbose { get; set; }
+
+    [Option("hook", HelpText = "Hook mode for Claude Code integration: outputs errors to stderr, suppresses other output, fails on warnings by default, exits with code 2 on failure")]
+    public bool HookMode { get; set; }
+
     /// <summary>
     /// Executes the analyze command.
     /// </summary>
-    /// <returns>Exit code: 0 = success, 1 = issues found, 2 = error</returns>
+    /// <returns>Exit code: 0 = success, 1 = issues found (normal mode), 2 = issues found (hook mode) or error</returns>
     public async Task<int> ExecuteAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -131,7 +137,7 @@ public sealed class AnalyzeCommand
 
                 baseline ??= new Baseline.BaselineFile();
 
-                if (!UpdateBaseline)
+                if (!UpdateBaseline && Verbose)
                 {
                     var countsByRule = baseline.GetEntriesByRule();
                     var totalBaselined = baseline.Entries.Count;
@@ -177,7 +183,8 @@ public sealed class AnalyzeCommand
                     return 2;
                 }
 
-                var patterns = Patterns?.ToArray() ?? new[] { "**/*.cs", "**/*.csproj" };
+                // CommandLineParser initializes IEnumerable to empty (not null), so check Any()
+                var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj" };
                 results = analyzer.AnalyzeDirectoryAsync(rootDirectory, patterns, cancellationToken);
             }
 
@@ -199,7 +206,16 @@ public sealed class AnalyzeCommand
                 results = baseline.FilterNewDetectionsAsync(results, rootDirectory);
             }
 
-            // Create output formatter
+            // Hook mode: collect results, output to stderr, exit with code 2 on failure
+            // Hook mode defaults to warning severity for stricter checking
+            if (HookMode)
+            {
+                // Use warning severity by default in hook mode, or user-specified --fail-on if stricter
+                var hookSeverity = failOnSeverity < DetectionSeverity.Warning ? failOnSeverity : DetectionSeverity.Warning;
+                return await ExecuteHookModeAsync(results, hookSeverity, cancellationToken);
+            }
+
+            // Normal mode: format and output to stdout
             var formatter = CreateOutputFormatter();
 
             // Track results for exit code determination
@@ -209,7 +225,7 @@ public sealed class AnalyzeCommand
             // Format and output results
             await formatter.FormatAsync(trackedResults, Console.Out, cancellationToken);
 
-            // Determine exit code
+            // Determine exit code (1 = issues found in normal mode)
             return issueTracker.ShouldFail ? 1 : 0;
         }
         catch (OperationCanceledException)
@@ -295,6 +311,49 @@ public sealed class AnalyzeCommand
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Executes analysis in hook mode - outputs errors to stderr, suppresses other output,
+    /// and exits with code 2 on failure (for Claude Code hook blocking).
+    /// </summary>
+    private static async Task<int> ExecuteHookModeAsync(
+        IAsyncEnumerable<DetectionResult> results,
+        DetectionSeverity failOnSeverity,
+        CancellationToken cancellationToken)
+    {
+        var issues = new List<DetectionResult>();
+
+        await foreach (var result in results.WithCancellation(cancellationToken))
+        {
+            if (result.Severity >= failOnSeverity)
+            {
+                issues.Add(result);
+            }
+        }
+
+        if (issues.Count == 0)
+        {
+            return 0;
+        }
+
+        // Output to stderr in a format Claude can understand
+        await Console.Error.WriteLineAsync("SLOPWATCH BLOCKED: Your edit introduced code that violates slopwatch rules.");
+        await Console.Error.WriteLineAsync();
+
+        foreach (var issue in issues)
+        {
+            await Console.Error.WriteLineAsync($"- {issue.FilePath}:{issue.LineNumber} [{issue.RuleId}]: {issue.Message}");
+            if (!string.IsNullOrEmpty(issue.SuggestedFix))
+            {
+                await Console.Error.WriteLineAsync($"  Fix: {issue.SuggestedFix}");
+            }
+        }
+
+        await Console.Error.WriteLineAsync();
+        await Console.Error.WriteLineAsync("Fix these issues properly instead of working around them.");
+
+        return 2;
     }
 
     private static IEnumerable<IDetectionRule> CreateDetectionRules()

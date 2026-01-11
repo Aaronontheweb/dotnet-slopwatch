@@ -216,27 +216,11 @@ public sealed class SuppressionChecker
     /// </summary>
     private static string GetRelativePath(string basePath, string targetPath)
     {
-        var baseUri = new Uri(EnsureTrailingSlash(basePath));
-        var targetUri = new Uri(targetPath);
+        // Ensure both paths are absolute for reliable comparison
+        var absoluteBase = Path.GetFullPath(basePath);
+        var absoluteTarget = Path.GetFullPath(targetPath);
 
-        if (!targetUri.IsAbsoluteUri)
-            return targetPath;
-
-        var relativeUri = baseUri.MakeRelativeUri(targetUri);
-        return Uri.UnescapeDataString(relativeUri.ToString()).Replace('/', Path.DirectorySeparatorChar);
-    }
-
-    /// <summary>
-    /// Ensures a path has a trailing slash.
-    /// </summary>
-    private static string EnsureTrailingSlash(string path)
-    {
-        if (!path.EndsWith(Path.DirectorySeparatorChar.ToString()) &&
-            !path.EndsWith(Path.AltDirectorySeparatorChar.ToString()))
-        {
-            return path + Path.DirectorySeparatorChar;
-        }
-        return path;
+        return Path.GetRelativePath(absoluteBase, absoluteTarget);
     }
 
     /// <summary>

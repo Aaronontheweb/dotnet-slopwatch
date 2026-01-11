@@ -91,7 +91,8 @@ public sealed class InitCommand
             var analyzer = new FileAnalyzer(rules, options);
 
             // Analyze directory
-            var patterns = Patterns?.ToArray() ?? new[] { "**/*.cs", "**/*.csproj" };
+            // CommandLineParser initializes IEnumerable to empty (not null), so check Any()
+            var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj" };
 
             await Console.Out.WriteLineAsync("Scanning for existing issues...");
 

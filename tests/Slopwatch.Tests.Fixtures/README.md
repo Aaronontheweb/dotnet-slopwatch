@@ -78,13 +78,13 @@ To test Slopwatch detection rules against these fixtures:
 
 ```bash
 # Analyze all fixture files
-dotnet slopwatch analyze tests/Slopwatch.Tests.Fixtures/
+slopwatch analyze tests/Slopwatch.Tests.Fixtures/
 
 # Analyze specific file
-dotnet slopwatch analyze tests/Slopwatch.Tests.Fixtures/DisabledTestSamples.cs
+slopwatch analyze tests/Slopwatch.Tests.Fixtures/DisabledTestSamples.cs
 
 # Run with specific rule only
-dotnet slopwatch analyze tests/Slopwatch.Tests.Fixtures/ --rule SW001
+slopwatch analyze tests/Slopwatch.Tests.Fixtures/ --rule SW001
 ```
 
 ## Expected Results
