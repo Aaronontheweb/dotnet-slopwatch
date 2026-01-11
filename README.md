@@ -117,6 +117,15 @@ slopwatch analyze --fail-on error
 slopwatch analyze --fail-on warning
 ```
 
+### Performance
+
+If you're concerned about performance on large projects, use `--stats` to see how many files are being analyzed and how long it takes:
+
+```bash
+slopwatch analyze --stats
+# Output: Stats: 44 files analyzed in 1.64s
+```
+
 ## Detection Rules
 
 | Rule | Severity | Description |
