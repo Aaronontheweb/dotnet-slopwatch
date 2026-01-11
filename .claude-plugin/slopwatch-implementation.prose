@@ -1,0 +1,191 @@
+# Slopwatch Implementation Workflow
+# OpenProse workflow for implementing the dotnet-slopwatch tool
+
+## Agents
+
+agent researcher using sonnet
+  skills: WebSearch, WebFetch, Read, Grep, Glob
+  description: Researches code quality patterns, LLM reward hacking behaviors, and existing linter implementations
+
+agent architect using opus
+  skills: Read, Write, Edit, Grep, Glob
+  description: Designs system architecture, interfaces, and project structure
+
+agent implementer using sonnet
+  skills: Read, Write, Edit, Bash, Grep, Glob
+  description: Implements C# code following the architecture design
+
+agent tester using sonnet
+  skills: Read, Write, Edit, Bash, Grep, Glob
+  description: Writes tests and creates test fixtures with intentional slop patterns
+
+## Phase 1: Research
+
+phase "Slop Pattern Research":
+  researcher: Search for common LLM reward hacking patterns beyond the initial list (disabled tests, warning suppression, empty catch blocks, timeout jiggling). Look at slopometry, existing linters, and AI coding tool discussions.
+
+  researcher: Document additional slop patterns to detect:
+    - Magic number additions to make tests pass
+    - Hardcoded expected values that match test assertions
+    - Removing assertions from tests
+    - Adding overly broad exception handlers
+    - Commenting out problematic code instead of fixing it
+    - Reducing test coverage by deleting tests
+    - Adding retry loops to flaky tests
+    - Loosening type constraints or validation
+
+  researcher: Save findings to docs/slop-patterns.md
+
+## Phase 2: Architecture
+
+phase "Project Setup":
+  architect: Create the solution structure:
+    - src/Slopwatch/Slopwatch.csproj (core library, net9.0)
+    - src/Slopwatch.Cmd/Slopwatch.Cmd.csproj (CLI tool)
+    - tests/Slopwatch.Tests/Slopwatch.Tests.csproj (xUnit tests)
+    - tests/Slopwatch.Tests.Fixtures/ (sloppy code samples)
+
+  architect: Update Slopwatch.slnx with the new projects
+
+  architect: Update Directory.Packages.props with dependencies:
+    - LibGit2Sharp
+    - Microsoft.CodeAnalysis.CSharp
+    - CommandLineParser
+    - xunit, xunit.runner.visualstudio
+    - Microsoft.NET.Test.Sdk
+    - coverlet.collector
+
+phase "Core Interfaces":
+  architect: Design and create the core interfaces:
+    - IDetectionRule with RuleId, Name, Description, Severity, AnalyzeAsync
+    - DetectionContext with file info, syntax tree, changed lines
+    - DetectionResult with location, message, suggested fix
+    - DetectionSeverity enum (Info, Warning, Error)
+
+## Phase 3: Implementation
+
+phase "File Analysis":
+  implementer: Implement FileAnalyzer for direct file analysis:
+    - AnalyzeFile(path) to analyze a single file
+    - AnalyzeFiles(paths) to analyze multiple files
+    - AnalyzeDirectory(path, patterns) for bulk analysis
+
+  implementer: Optionally implement GitDiffAnalyzer using libgit2sharp:
+    - GetChangedFiles(targetBranch) for CI/CD branch comparison
+    - This is secondary to direct file analysis
+
+phase "Detection Rules":
+  implementer: Implement DisabledTestRule (SW001):
+    - Detect [Fact(Skip=...)], [Theory(Skip=...)]
+    - Detect [Ignore], [IgnoreAttribute]
+    - Detect #if false around test methods
+    - Detect xUnit [Trait("Category", "Skip")] patterns
+
+  implementer: Implement WarningSuppressRule (SW002):
+    - Detect #pragma warning disable
+    - Detect [SuppressMessage] attributes
+    - Detect changes to .editorconfig severity levels
+    - Detect NoWarn additions in .csproj files
+
+  implementer: Implement EmptyCatchBlockRule (SW003):
+    - Detect completely empty catch blocks
+    - Detect catch blocks that only log without handling
+    - Flag catch(Exception) without specific handling
+
+  implementer: Implement TimeoutJigglingRule (SW004):
+    - Detect Task.Delay in test files
+    - Detect Thread.Sleep in test files
+    - Detect SpinWait usage in tests
+
+  loop until **all initially planned rules are implemented**:
+    implementer: Implement next detection rule from the research findings
+
+phase "CLI Tool":
+  implementer: Implement Slopwatch.Cmd with CommandLineParser:
+    - analyze command (default): run analysis
+    - list-rules command: show available rules
+    - init command: create config file
+
+  implementer: Add CLI options:
+    - --branch, -b: target branch to compare
+    - --working-tree: analyze uncommitted changes
+    - --output, -o: format (console, json, sarif)
+    - --min-severity: filter threshold
+    - --fail-on: exit code threshold
+    - --config, -c: config file path
+
+  implementer: Implement output formatters:
+    - ConsoleOutputFormatter with colored output
+    - JsonOutputFormatter for hook integration
+    - SarifOutputFormatter for CI/CD integration
+
+## Phase 4: Testing
+
+phase "Test Fixtures":
+  tester: Create test fixtures in Slopwatch.Tests.Fixtures/:
+    - DisabledTestSamples.cs with various skip patterns
+    - WarningSuppressSamples.cs with pragma and attributes
+    - EmptyCatchSamples.cs with swallowed exceptions
+    - TimeoutJigglingSamples.cs with delays in tests
+    - CleanCodeSamples.cs with good patterns (should not trigger)
+
+phase "Unit Tests":
+  tester: Write unit tests for each detection rule:
+    - Test positive detection (finds violations)
+    - Test negative cases (clean code passes)
+    - Test edge cases and variations
+
+  tester: Write tests for DiffAnalyzer:
+    - Mock git operations for unit tests
+    - Test line change extraction
+
+  loop until **all tests pass**:
+    implementer: Fix failing tests
+    tester: Verify fixes don't introduce regressions
+
+phase "Integration Tests":
+  tester: Create integration tests:
+    - End-to-end CLI tests
+    - Real git repository tests
+    - Output format validation
+
+## Phase 5: Integration
+
+phase "CI/CD":
+  implementer: Update .github/workflows/pr_validation.yml:
+    - Build all projects
+    - Run tests with coverage
+    - Pack the tool
+
+  implementer: Update .github/workflows/publish_nuget.yml:
+    - Publish Slopwatch.Cmd as dotnet tool
+    - Create GitHub release
+
+phase "Hook Configuration":
+  implementer: Create example hook configuration:
+    - .claude/hooks/slopwatch.json for Claude Code
+    - Document hook setup in README
+
+phase "Documentation":
+  implementer: Update README.md with:
+    - Tool description and purpose
+    - Installation instructions
+    - Usage examples
+    - Rule documentation
+    - Hook integration guide
+
+## Completion
+
+phase "Verification":
+  tester: Run full test suite
+  tester: Verify CLI works end-to-end
+  tester: Test hook integration manually
+
+  loop until **the tool is production ready**:
+    implementer: Address any remaining issues
+    tester: Verify fixes
+
+phase "Commit":
+  implementer: Create commit with descriptive message
+  implementer: Push to feature branch
+  implementer: Create pull request with summary of changes

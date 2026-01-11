@@ -5,6 +5,12 @@
     <File Path="global.json" />
     <File Path="NuGet.Config" />
     <File Path="README.md" />
+    <File Path="CLAUDE.md" />
   </Folder>
-  <Project Path="src/Akka.Console/Akka.Console.csproj" />
+  <Folder Name="/src/">
+    <!-- Projects will be added by OpenProse workflow -->
+  </Folder>
+  <Folder Name="/tests/">
+    <!-- Test projects will be added by OpenProse workflow -->
+  </Folder>
 </Solution>
