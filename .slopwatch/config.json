@@ -1,0 +1,30 @@
+{
+  "suppressions": [
+    {
+      "ruleId": "SW001",
+      "pattern": "**/Slopwatch.Tests.Fixtures/**",
+      "justification": "Test fixtures contain intentionally sloppy code samples for testing detection rules"
+    },
+    {
+      "ruleId": "SW002",
+      "pattern": "**/Slopwatch.Tests.Fixtures/**",
+      "justification": "Test fixtures contain intentionally sloppy code samples for testing detection rules"
+    },
+    {
+      "ruleId": "SW003",
+      "pattern": "**/Slopwatch.Tests.Fixtures/**",
+      "justification": "Test fixtures contain intentionally sloppy code samples for testing detection rules"
+    },
+    {
+      "ruleId": "SW004",
+      "pattern": "**/Slopwatch.Tests.Fixtures/**",
+      "justification": "Test fixtures contain intentionally sloppy code samples for testing detection rules"
+    },
+    {
+      "ruleId": "SW005",
+      "pattern": "**/Slopwatch.Tests.Fixtures/**",
+      "justification": "Test fixtures project intentionally disables warnings for demonstration purposes"
+    }
+  ],
+  "globalSuppressions": []
+}

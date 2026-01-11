@@ -177,7 +177,8 @@ public sealed class AnalyzeCommand
                     return 2;
                 }
 
-                var patterns = Patterns?.ToArray() ?? new[] { "**/*.cs", "**/*.csproj" };
+                // CommandLineParser initializes IEnumerable to empty (not null), so check Any()
+                var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj" };
                 results = analyzer.AnalyzeDirectoryAsync(rootDirectory, patterns, cancellationToken);
             }
 
