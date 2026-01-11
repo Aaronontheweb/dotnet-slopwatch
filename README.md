@@ -129,7 +129,7 @@ slopwatch analyze --fail-on warning
 
 ## Claude Code Integration
 
-Add slopwatch as a hook to catch slop patterns during AI-assisted coding. Create a file at `.claude/hooks/slopwatch-hook.json`:
+Add slopwatch as a hook to catch slop patterns during AI-assisted coding. Add the following to your project's `.claude/settings.json`:
 
 ```json
 {
@@ -145,7 +145,7 @@ Add slopwatch as a hook to catch slop patterns during AI-assisted coding. Create
 }
 ```
 
-The hook will run when you stop a coding session, analyzing all C# files in the current directory for slop patterns.
+The hook will run when Claude finishes responding, analyzing all C# files in the current directory for slop patterns. If any errors are found, the hook will block the response.
 
 ## CI/CD Integration
 

@@ -67,7 +67,18 @@ The tool can run as a Claude Code hook:
 slopwatch analyze --working-tree --output json --fail-on error
 ```
 
-Hook configuration goes in `.claude/hooks/` or project-level hooks.
+Hook configuration goes in `.claude/settings.json` at the project level.
+
+### When Slopwatch Blocks Your Edit
+If you see "SLOPWATCH BLOCKED" in a hook error, your edit introduced a "reward hacking" pattern. These are shortcuts that make tests pass without fixing the real issue:
+
+- **SW001**: Don't disable tests with `Skip` or `#if false`
+- **SW002**: Don't suppress warnings with `#pragma warning disable`
+- **SW003**: Don't use empty catch blocks that swallow exceptions
+- **SW004**: Don't add arbitrary delays (`Task.Delay`, `Thread.Sleep`) in tests
+- **SW005**: Don't disable `TreatWarningsAsErrors` or add to `NoWarn`
+
+**How to fix**: Read the specific error message and suggested fix. Implement a proper solution instead of working around the problem. If the suppression is genuinely needed, use `[SlopwatchSuppress("SW###", "justification with 20+ chars")]`.
 
 ## CI/CD
 - GitHub Actions for PR validation and releases
