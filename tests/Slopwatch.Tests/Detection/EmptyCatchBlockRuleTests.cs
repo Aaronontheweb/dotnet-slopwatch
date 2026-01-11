@@ -1,0 +1,579 @@
+using Microsoft.CodeAnalysis.CSharp;
+using Slopwatch.Detection;
+using Slopwatch.Detection.Rules;
+using Xunit;
+
+namespace Slopwatch.Tests.Detection;
+
+/// <summary>
+/// Tests for SW003 - Empty Catch Block Detection Rule
+/// </summary>
+public class EmptyCatchBlockRuleTests
+{
+    private readonly EmptyCatchBlockRule _rule = new();
+
+    [Fact]
+    public void Test_DetectsEmptyCatch()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private void DoSomething() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal("SW003", result.RuleId);
+        Assert.Contains("Empty catch block", result.Message);
+        Assert.Equal(DetectionSeverity.Error, result.Severity);
+        Assert.Equal(10, result.LineNumber);
+    }
+
+    [Fact]
+    public void Test_DetectsCommentOnlyCatch()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (Exception)
+        {
+            // TODO: Handle this exception properly
+        }
+    }
+
+    private void DoSomething() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal("SW003", result.RuleId);
+        Assert.Contains("Empty catch block", result.Message);
+        Assert.Equal(DetectionSeverity.Error, result.Severity);
+    }
+
+    [Fact]
+    public void Test_DetectsLoggingOnlyCatch()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+        }
+    }
+
+    private void DoSomething() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal("SW003", result.RuleId);
+        Assert.Contains("only logs", result.Message);
+        Assert.Contains("without rethrowing", result.Message);
+        Assert.Equal(DetectionSeverity.Warning, result.Severity);
+    }
+
+    [Fact]
+    public void Test_DetectsConsoleWriteOnlyCatch()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+
+    private void DoSomething() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal("SW003", result.RuleId);
+        Assert.Contains("only logs", result.Message);
+        Assert.Equal(DetectionSeverity.Warning, result.Severity);
+    }
+
+    [Fact]
+    public void Test_DetectsBroadCatchException()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (Exception ex)
+        {
+            HandleError(ex);
+        }
+    }
+
+    private void DoSomething() { }
+    private void HandleError(Exception ex) { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal("SW003", result.RuleId);
+        Assert.Contains("overly broad exception type", result.Message);
+        Assert.Contains("Exception", result.Message);
+        Assert.Equal(DetectionSeverity.Warning, result.Severity);
+    }
+
+    [Fact]
+    public void Test_DetectsCatchWithoutType()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch
+        {
+            HandleError();
+        }
+    }
+
+    private void DoSomething() { }
+    private void HandleError() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal("SW003", result.RuleId);
+        Assert.Contains("overly broad exception type", result.Message);
+        Assert.Contains("all exceptions", result.Message);
+    }
+
+    [Fact]
+    public void Test_IgnoresProperExceptionHandling()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Log.Error(""Operation failed"", ex);
+            CleanupResources();
+            throw;
+        }
+    }
+
+    private void DoSomething() { }
+    private void CleanupResources() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Test_IgnoresSpecificExceptionTypes()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (InvalidOperationException ex)
+        {
+            HandleSpecificError(ex);
+        }
+        catch (ArgumentException ex)
+        {
+            HandleSpecificError(ex);
+        }
+    }
+
+    private void DoSomething() { }
+    private void HandleSpecificError(Exception ex) { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Test_IgnoresLogWithRethrow()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (IOException ex)
+        {
+            Logger.Error(""Failed to do something"", ex);
+            throw;
+        }
+    }
+
+    private void DoSomething() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        // Should not detect because we're using a specific exception type and rethrowing
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Test_IgnoresValidSlopwatchSuppress()
+    {
+        // Arrange
+        const string code = @"
+using Slopwatch.Suppression;
+public class TestClass
+{
+    [SlopwatchSuppress(""SW003"", ""This method attempts to load optional configuration file. Empty catch is acceptable because missing config is a valid scenario."")]
+    public void LoadOptionalConfig()
+    {
+        try
+        {
+            LoadConfigFile();
+        }
+        catch (FileNotFoundException)
+        {
+            // Optional file, ignore if not present
+        }
+    }
+
+    private void LoadConfigFile() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Test_DetectsMultipleCatchBlocks()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method1()
+    {
+        try { DoSomething(); }
+        catch (Exception) { }
+    }
+
+    public void Method2()
+    {
+        try { DoSomething(); }
+        catch (Exception ex) { Log.Error(ex); }
+    }
+
+    private void DoSomething() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Equal(2, results.Count);
+        Assert.All(results, r => Assert.Equal("SW003", r.RuleId));
+    }
+
+    [Fact]
+    public void Test_ProvidesHelpfulSuggestedFix()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try { DoSomething(); }
+        catch (Exception) { }
+    }
+    private void DoSomething() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.NotNull(result.SuggestedFix);
+        Assert.Contains("Handle", result.SuggestedFix);
+    }
+
+    [Fact]
+    public void Test_IncludesCodeSnippet()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try { DoSomething(); }
+        catch (Exception) { }
+    }
+    private void DoSomething() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.NotNull(result.CodeSnippet);
+    }
+
+    [Fact]
+    public void Test_DetectsSystemException()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (System.Exception ex)
+        {
+            HandleError(ex);
+        }
+    }
+
+    private void DoSomething() { }
+    private void HandleError(Exception ex) { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal("SW003", result.RuleId);
+        Assert.Contains("overly broad", result.Message);
+    }
+
+    [Fact]
+    public void Test_IgnoresCatchWithOtherStatements()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            CleanupResources();
+            return;
+        }
+    }
+
+    private void DoSomething() { }
+    private void CleanupResources() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        // Should still detect broad Exception type, but not as logging-only
+        var result = Assert.Single(results);
+        Assert.DoesNotContain("only logs", result.Message);
+        Assert.Contains("overly broad", result.Message);
+    }
+
+    [Fact]
+    public void Test_RespectsLineScope()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method1()
+    {
+        try { DoSomething(); }
+        catch (Exception) { }
+    }
+
+    public void Method2()
+    {
+        try { DoSomething(); }
+        catch (Exception) { }
+    }
+
+    private void DoSomething() { }
+}";
+        var context = CreateContextWithLineScope(code, addedLines: new[] { 7 });
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal(7, result.LineNumber);
+    }
+
+    #region Helper Methods
+
+    private DetectionContext CreateContext(string code)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(code);
+        return new DetectionContext(
+            FilePath: "/src/TestFile.cs",
+            FileName: "TestFile.cs",
+            Content: code,
+            SyntaxTree: syntaxTree,
+            IsTestFile: false
+        );
+    }
+
+    private DetectionContext CreateContextWithLineScope(string code, int[]? addedLines = null, int[]? modifiedLines = null)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(code);
+        return new DetectionContext(
+            FilePath: "/src/TestFile.cs",
+            FileName: "TestFile.cs",
+            Content: code,
+            SyntaxTree: syntaxTree,
+            IsTestFile: false,
+            AddedLines: addedLines != null ? new HashSet<int>(addedLines) : null,
+            ModifiedLines: modifiedLines != null ? new HashSet<int>(modifiedLines) : null
+        );
+    }
+
+    private List<DetectionResult> RunRule(DetectionContext context)
+    {
+        var results = new List<DetectionResult>();
+        var enumerable = _rule.AnalyzeAsync(context);
+
+        var enumerator = enumerable.GetAsyncEnumerator();
+        try
+        {
+            while (enumerator.MoveNextAsync().AsTask().Result)
+            {
+                results.Add(enumerator.Current);
+            }
+        }
+        finally
+        {
+            enumerator.DisposeAsync().AsTask().Wait();
+        }
+
+        return results;
+    }
+
+    #endregion
+}

@@ -1,0 +1,38 @@
+{
+  // Example Slopwatch configuration file
+  // Place this at .slopwatch/config.json in your repository root
+
+  "suppressions": [
+    {
+      "ruleId": "SW002",
+      "pattern": "**/Generated/**",
+      "justification": "Generated code from protobuf compiler - cannot be modified and contains necessary warning suppressions"
+    },
+    {
+      "ruleId": "SW003",
+      "pattern": "src/Legacy/**",
+      "justification": "Legacy code scheduled for refactoring in Q2 2026 - documented in JIRA-1234",
+      "expiresAt": "2026-06-01",
+      "issueUrl": "https://jira.company.com/browse/PROJ-1234",
+      "reviewer": "john.doe@company.com"
+    },
+    {
+      "ruleId": "SW001",
+      "pattern": "**/*.Designer.cs",
+      "justification": "WinForms/WPF designer-generated files contain disabled event handlers for development purposes"
+    },
+    {
+      "ruleId": "SW002",
+      "pattern": "**/Migrations/**/*.cs",
+      "justification": "Entity Framework migrations are auto-generated and may contain obsolete API usage"
+    }
+  ],
+
+  "globalSuppressions": [
+    {
+      "ruleId": "SW004",
+      "justification": "Integration test project uses real async coordination and timing delays to validate rate limiter behavior",
+      "issueUrl": "https://github.com/org/repo/issues/123"
+    }
+  ]
+}

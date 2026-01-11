@@ -26,35 +26,37 @@ dotnet tool install Slopwatch.Cmd
 
 ## Usage
 
-### Analyze changes against a branch
+### Analyze current directory
 ```bash
-slopwatch analyze --branch main
+slopwatch analyze -d .
 ```
 
-### Analyze working tree (for hooks)
+### Analyze specific files
 ```bash
-slopwatch analyze --working-tree
+slopwatch analyze -f src/MyProject/MyFile.cs
+```
+
+### Use glob patterns
+```bash
+slopwatch analyze -d . -p "**/*.cs"
 ```
 
 ### Output formats
 ```bash
 # Human-readable console output (default)
-slopwatch analyze --branch main
+slopwatch analyze -d .
 
 # JSON for programmatic use
-slopwatch analyze --branch main --output json
-
-# SARIF for GitHub code scanning
-slopwatch analyze --branch main --output sarif --file results.sarif
+slopwatch analyze -d . --output json
 ```
 
 ### Exit codes
 ```bash
 # Fail if errors found (default)
-slopwatch analyze --fail-on error
+slopwatch analyze -d . --fail-on error
 
 # Fail on warnings too
-slopwatch analyze --fail-on warning
+slopwatch analyze -d . --fail-on warning
 ```
 
 ## Detection Rules
@@ -68,7 +70,7 @@ slopwatch analyze --fail-on warning
 
 ## Claude Code Integration
 
-Add slopwatch as a hook to catch slop patterns during AI-assisted coding:
+Add slopwatch as a hook to catch slop patterns during AI-assisted coding. Create a file at `.claude/hooks/slopwatch-hook.json`:
 
 ```json
 {
@@ -76,43 +78,61 @@ Add slopwatch as a hook to catch slop patterns during AI-assisted coding:
     "Stop": [
       {
         "type": "command",
-        "command": "dotnet slopwatch analyze --working-tree --output json --fail-on error"
+        "command": "dotnet slopwatch analyze -d . --output json --fail-on error",
+        "timeout": 60
       }
     ]
   }
 }
 ```
 
+The hook will run when you stop a coding session, analyzing all C# files in the current directory for slop patterns.
+
 ## CI/CD Integration
 
 ### GitHub Actions
 ```yaml
-- name: Run Slopwatch
-  run: |
-    dotnet tool install --global Slopwatch.Cmd
-    slopwatch analyze --branch origin/${{ github.base_ref }} --output sarif --file slopwatch.sarif --fail-on error
+- name: Install Slopwatch
+  run: dotnet tool install --global Slopwatch.Cmd
 
-- name: Upload SARIF
-  uses: github/codeql-action/upload-sarif@v3
-  with:
-    sarif_file: slopwatch.sarif
+- name: Run Slopwatch
+  run: slopwatch analyze -d . --output json --fail-on error
+```
+
+### Azure DevOps
+```yaml
+- task: DotNetCoreCLI@2
+  displayName: 'Install Slopwatch'
+  inputs:
+    command: 'custom'
+    custom: 'tool'
+    arguments: 'install --global Slopwatch.Cmd'
+
+- script: slopwatch analyze -d . --fail-on error
+  displayName: 'Run Slopwatch'
 ```
 
 ## Configuration
 
-Create `.slopwatch/slopwatch.json`:
+Create a `.slopwatch/slopwatch.json` configuration file to customize behavior:
 
 ```json
 {
-  "gitBranch": "main",
   "minSeverity": "warning",
-  "failOnSeverity": "error",
   "rules": {
     "SW001": { "enabled": true, "severity": "error" },
-    "SW002": { "enabled": true, "severity": "warning" }
+    "SW002": { "enabled": true, "severity": "warning" },
+    "SW003": { "enabled": true, "severity": "error" },
+    "SW004": { "enabled": true, "severity": "warning" }
   },
-  "exclude": ["**/Generated/**"]
+  "exclude": ["**/Generated/**", "**/obj/**", "**/bin/**"]
 }
+```
+
+Use the `-c` or `--config` option to specify a custom configuration file location:
+
+```bash
+slopwatch analyze -d . --config path/to/config.json
 ```
 
 ## Building from Source

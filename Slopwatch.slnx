@@ -8,9 +8,11 @@
     <File Path="CLAUDE.md" />
   </Folder>
   <Folder Name="/src/">
-    <!-- Projects will be added by OpenProse workflow -->
+    <Project Path="src/Slopwatch/Slopwatch.csproj" />
+    <Project Path="src/Slopwatch.Cmd/Slopwatch.Cmd.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <!-- Test projects will be added by OpenProse workflow -->
+    <Project Path="tests/Slopwatch.Tests/Slopwatch.Tests.csproj" />
+    <Project Path="tests/Slopwatch.Tests.Fixtures/Slopwatch.Tests.Fixtures.csproj" />
   </Folder>
 </Solution>
