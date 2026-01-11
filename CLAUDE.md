@@ -67,7 +67,7 @@ The tool runs as a Claude Code hook using the `--hook` flag:
 slopwatch analyze -d . --hook
 ```
 
-The `--hook` flag outputs errors to stderr, suppresses other output, and exits with code 2 on failure (blocking the edit).
+The `--hook` flag uses `git status` to only analyze dirty files (for fast performance), outputs errors to stderr, suppresses other output, and exits with code 2 on failure (blocking the edit).
 
 Hook configuration goes in `.claude/settings.json` at the project level. Use `--verbose` flag if you want to see baseline loading details in normal mode.
 

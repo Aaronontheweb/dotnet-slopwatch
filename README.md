@@ -160,12 +160,15 @@ Add slopwatch as a hook to catch slop patterns during AI-assisted coding. Add th
 ```
 
 The `--hook` flag enables Claude Code integration mode which:
+- **Uses `git status` to only analyze dirty files** - makes hooks near-instant even on large repos
 - Outputs errors to stderr in a readable format
 - Suppresses all other output
 - Blocks on warnings and errors
 - Exits with code 2 on failure (blocking the edit)
 
 Claude will see the formatted error message and can then fix the issue properly.
+
+> **Note:** Hook mode requires git. If git is unavailable, it falls back to full analysis.
 
 ## CI/CD Integration
 
