@@ -155,7 +155,7 @@ public sealed class FileAnalyzer
     /// <param name="directoryPath">The directory to search.</param>
     /// <param name="patterns">The glob patterns to match.</param>
     /// <returns>A collection of matching file paths.</returns>
-    private IEnumerable<string> GetMatchingFiles(string directoryPath, string[] patterns)
+    public IEnumerable<string> GetMatchingFiles(string directoryPath, string[] patterns)
     {
         var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
 
