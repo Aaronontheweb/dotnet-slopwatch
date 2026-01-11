@@ -59,6 +59,9 @@ public sealed class AnalyzeCommand
     [Option("stats", HelpText = "Show analysis statistics (files analyzed, time elapsed)")]
     public bool ShowStats { get; set; }
 
+    [Option("parallel", HelpText = "Number of parallel workers for file analysis (default: processor count, 0 = sequential)")]
+    public int Parallelism { get; set; } = -1; // -1 means use default (processor count)
+
     /// <summary>
     /// Executes the analyze command.
     /// </summary>
@@ -220,16 +223,21 @@ public sealed class AnalyzeCommand
                 // CommandLineParser initializes IEnumerable to empty (not null), so check Any()
                 var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj" };
 
-                // For stats, we need to enumerate files first to get count
-                if (ShowStats)
+                // Get the list of files to analyze
+                var fileList = analyzer.GetMatchingFiles(rootDirectory, patterns).ToList();
+                filesAnalyzed = fileList.Count;
+
+                // Use parallel analysis for better performance on large codebases
+                // Only parallelize if more than 50 files (unless explicitly disabled with --parallel 0)
+                const int ParallelThreshold = 50;
+                if (Parallelism != 0 && fileList.Count > ParallelThreshold)
                 {
-                    var fileList = analyzer.GetMatchingFiles(rootDirectory, patterns).ToList();
-                    filesAnalyzed = fileList.Count;
-                    results = analyzer.AnalyzeFilesAsync(fileList, cancellationToken);
+                    var parallelism = Parallelism > 0 ? Parallelism : Environment.ProcessorCount;
+                    results = ParallelAnalyzer.AnalyzeFilesParallelAsync(analyzer, fileList, parallelism, cancellationToken);
                 }
                 else
                 {
-                    results = analyzer.AnalyzeDirectoryAsync(rootDirectory, patterns, cancellationToken);
+                    results = analyzer.AnalyzeFilesAsync(fileList, cancellationToken);
                 }
             }
 
