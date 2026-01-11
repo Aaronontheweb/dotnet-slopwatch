@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "result=$(slopwatch analyze -d . --output json --fail-on error 2>/dev/null); if echo \"$result\" | grep -q '\"errors\": [1-9]'; then echo \"SLOPWATCH BLOCKED: Your edit introduced code that violates slopwatch rules. Review the errors below and fix them before proceeding:\" >&2; echo \"$result\" | jq -r '.results[] | \"- \\(.filePath):\\(.lineNumber) [\\(.ruleId)]: \\(.message)\\n  Fix: \\(.suggestedFix)\"' >&2; exit 2; fi",
+            "command": "slopwatch analyze -d . --hook",
             "timeout": 60000
           }
         ]

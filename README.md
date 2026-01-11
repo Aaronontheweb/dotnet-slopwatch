@@ -134,18 +134,28 @@ Add slopwatch as a hook to catch slop patterns during AI-assisted coding. Add th
 ```json
 {
   "hooks": {
-    "Stop": [
+    "PostToolUse": [
       {
-        "type": "command",
-        "command": "slopwatch analyze -d . --output json --fail-on error",
-        "timeout": 60
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "slopwatch analyze -d . --hook",
+            "timeout": 60000
+          }
+        ]
       }
     ]
   }
 }
 ```
 
-The hook will run when Claude finishes responding, analyzing all C# files in the current directory for slop patterns. If any errors are found, the hook will block the response.
+The `--hook` flag enables Claude Code integration mode which:
+- Outputs errors to stderr in a readable format
+- Suppresses all other output
+- Exits with code 2 on failure (blocking the edit)
+
+Claude will see the formatted error message and can then fix the issue properly.
 
 ## CI/CD Integration
 

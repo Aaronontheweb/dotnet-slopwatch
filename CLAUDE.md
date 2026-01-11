@@ -62,12 +62,14 @@ tests/
 - Support multiple output formats: console, JSON, SARIF
 
 ## Claude Code Hook Integration
-The tool can run as a Claude Code hook:
+The tool runs as a Claude Code hook using the `--hook` flag:
 ```bash
-slopwatch analyze --working-tree --output json --fail-on error
+slopwatch analyze -d . --hook
 ```
 
-Hook configuration goes in `.claude/settings.json` at the project level.
+The `--hook` flag outputs errors to stderr, suppresses other output, and exits with code 2 on failure (blocking the edit).
+
+Hook configuration goes in `.claude/settings.json` at the project level. Use `--verbose` flag if you want to see baseline loading details in normal mode.
 
 ### When Slopwatch Blocks Your Edit
 If you see "SLOPWATCH BLOCKED" in a hook error, your edit introduced a "reward hacking" pattern. These are shortcuts that make tests pass without fixing the real issue:
