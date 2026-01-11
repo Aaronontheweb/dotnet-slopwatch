@@ -165,7 +165,7 @@ public sealed class AnalyzeCommand
             IAsyncEnumerable<DetectionResult> results;
 
             // In hook mode, only analyze dirty files from git status (much faster)
-            if (HookMode && Files is null)
+            if (HookMode && !(Files?.Any() == true))
             {
                 var dirtyFiles = await GetDirtyFilesAsync(rootDirectory, cancellationToken);
 
@@ -176,7 +176,6 @@ public sealed class AnalyzeCommand
                 }
 
                 // Filter to only supported file types
-                var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj" };
                 var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".csproj" };
                 var filesToAnalyze = dirtyFiles
                     .Where(f => supportedExtensions.Contains(Path.GetExtension(f)))
