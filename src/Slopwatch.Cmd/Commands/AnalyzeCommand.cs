@@ -1,5 +1,6 @@
 using CommandLine;
 using Slopwatch.Analysis;
+using Slopwatch.Baseline;
 using Slopwatch.Cmd.Output;
 using Slopwatch.Detection;
 using Slopwatch.Detection.Rules;
@@ -36,6 +37,18 @@ public sealed class AnalyzeCommand
     [Option('c', "config", HelpText = "Path to configuration file")]
     public string? ConfigFile { get; set; }
 
+    [Option("baseline", HelpText = "Path to baseline file (default: .slopwatch/baseline.json)")]
+    public string BaselineFile { get; set; } = ".slopwatch/baseline.json";
+
+    [Option("no-baseline", HelpText = "Skip baseline checking - report ALL detections (useful for initial setup)")]
+    public bool NoBaseline { get; set; }
+
+    [Option("create-baseline", HelpText = "Create a baseline file from current detections (skips normal output)")]
+    public string? CreateBaseline { get; set; }
+
+    [Option("update-baseline", HelpText = "Add new detections to an existing baseline file")]
+    public bool UpdateBaseline { get; set; }
+
     /// <summary>
     /// Executes the analyze command.
     /// </summary>
@@ -44,6 +57,25 @@ public sealed class AnalyzeCommand
     {
         try
         {
+            // Validate mutually exclusive options
+            if (!string.IsNullOrEmpty(CreateBaseline) && UpdateBaseline)
+            {
+                await Console.Error.WriteLineAsync("Cannot use --create-baseline and --update-baseline together");
+                return 2;
+            }
+
+            if (NoBaseline && UpdateBaseline)
+            {
+                await Console.Error.WriteLineAsync("Cannot use --no-baseline and --update-baseline together");
+                return 2;
+            }
+
+            if (NoBaseline && !string.IsNullOrEmpty(CreateBaseline))
+            {
+                await Console.Error.WriteLineAsync("Cannot use --no-baseline and --create-baseline together");
+                return 2;
+            }
+
             // Parse severity levels
             if (!TryParseSeverity(MinSeverity, out var minSeverity))
             {
@@ -70,14 +102,51 @@ public sealed class AnalyzeCommand
                 options.ExcludePatterns = excludeList;
             }
 
+            // Determine root directory
+            var rootDirectory = Directory ?? System.IO.Directory.GetCurrentDirectory();
+
+            // Load baseline (required by default unless --no-baseline or --create-baseline)
+            Baseline.BaselineFile? baseline = null;
+            var useBaseline = !NoBaseline && string.IsNullOrEmpty(CreateBaseline);
+
+            // Resolve baseline path relative to root directory
+            var resolvedBaselinePath = Path.IsPathRooted(BaselineFile)
+                ? BaselineFile
+                : Path.Combine(rootDirectory, BaselineFile);
+
+            if (useBaseline)
+            {
+                baseline = await Baseline.BaselineFile.LoadAsync(resolvedBaselinePath, cancellationToken);
+
+                if (baseline is null && !UpdateBaseline)
+                {
+                    await Console.Error.WriteLineAsync($"Baseline file not found: {resolvedBaselinePath}");
+                    await Console.Error.WriteLineAsync();
+                    await Console.Error.WriteLineAsync("Slopwatch requires a baseline to detect NEW issues.");
+                    await Console.Error.WriteLineAsync("Run 'slopwatch init' to create a baseline from existing code.");
+                    await Console.Error.WriteLineAsync();
+                    await Console.Error.WriteLineAsync("Or use --no-baseline to analyze ALL code (not recommended for CI/CD).");
+                    return 2;
+                }
+
+                baseline ??= new Baseline.BaselineFile();
+
+                if (!UpdateBaseline)
+                {
+                    var countsByRule = baseline.GetEntriesByRule();
+                    var totalBaselined = baseline.Entries.Count;
+                    if (totalBaselined > 0)
+                    {
+                        await Console.Error.WriteLineAsync($"Loaded baseline with {totalBaselined} entries ({string.Join(", ", countsByRule.Select(kv => $"{kv.Key}: {kv.Value}"))})");
+                    }
+                }
+            }
+
             // Create all detection rules
             var rules = CreateDetectionRules();
 
             // Create file analyzer
             var analyzer = new FileAnalyzer(rules, options);
-
-            // Create output formatter
-            var formatter = CreateOutputFormatter();
 
             // Determine what to analyze
             IAsyncEnumerable<DetectionResult> results;
@@ -102,17 +171,36 @@ public sealed class AnalyzeCommand
             else
             {
                 // Analyze directory
-                var directory = Directory ?? System.IO.Directory.GetCurrentDirectory();
-
-                if (!System.IO.Directory.Exists(directory))
+                if (!System.IO.Directory.Exists(rootDirectory))
                 {
-                    await Console.Error.WriteLineAsync($"Directory not found: {directory}");
+                    await Console.Error.WriteLineAsync($"Directory not found: {rootDirectory}");
                     return 2;
                 }
 
                 var patterns = Patterns?.ToArray() ?? new[] { "**/*.cs", "**/*.csproj" };
-                results = analyzer.AnalyzeDirectoryAsync(directory, patterns, cancellationToken);
+                results = analyzer.AnalyzeDirectoryAsync(rootDirectory, patterns, cancellationToken);
             }
+
+            // Handle --create-baseline mode
+            if (!string.IsNullOrEmpty(CreateBaseline))
+            {
+                return await CreateBaselineAsync(results, rootDirectory, CreateBaseline, cancellationToken);
+            }
+
+            // Handle --update-baseline mode
+            if (UpdateBaseline && baseline is not null)
+            {
+                return await UpdateBaselineAsync(results, rootDirectory, baseline, resolvedBaselinePath, cancellationToken);
+            }
+
+            // Filter against baseline if specified
+            if (baseline is not null)
+            {
+                results = baseline.FilterNewDetectionsAsync(results, rootDirectory);
+            }
+
+            // Create output formatter
+            var formatter = CreateOutputFormatter();
 
             // Track results for exit code determination
             var issueTracker = new IssueTracker(failOnSeverity);
@@ -138,6 +226,75 @@ public sealed class AnalyzeCommand
             }
             return 2;
         }
+    }
+
+    private static async Task<int> CreateBaselineAsync(
+        IAsyncEnumerable<DetectionResult> results,
+        string rootDirectory,
+        string outputPath,
+        CancellationToken cancellationToken)
+    {
+        var allResults = new List<DetectionResult>();
+        await foreach (var result in results.WithCancellation(cancellationToken))
+        {
+            allResults.Add(result);
+        }
+
+        var baseline = Baseline.BaselineFile.Create(
+            allResults,
+            rootDirectory,
+            $"Baseline created on {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
+
+        await baseline.SaveAsync(outputPath, cancellationToken);
+
+        var countsByRule = baseline.GetEntriesByRule();
+        await Console.Out.WriteLineAsync($"Created baseline at: {outputPath}");
+        await Console.Out.WriteLineAsync($"Total entries: {baseline.Entries.Count}");
+
+        foreach (var (ruleId, count) in countsByRule.OrderBy(kv => kv.Key))
+        {
+            await Console.Out.WriteLineAsync($"  {ruleId}: {count}");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> UpdateBaselineAsync(
+        IAsyncEnumerable<DetectionResult> results,
+        string rootDirectory,
+        Baseline.BaselineFile baseline,
+        string baselinePath,
+        CancellationToken cancellationToken)
+    {
+        var addedCount = 0;
+        var skippedCount = 0;
+
+        await foreach (var result in results.WithCancellation(cancellationToken))
+        {
+            if (baseline.AddEntry(result, rootDirectory))
+            {
+                addedCount++;
+            }
+            else
+            {
+                skippedCount++;
+            }
+        }
+
+        if (addedCount > 0)
+        {
+            await baseline.SaveAsync(baselinePath, cancellationToken);
+            await Console.Out.WriteLineAsync($"Updated baseline at: {baselinePath}");
+            await Console.Out.WriteLineAsync($"  Added: {addedCount} new entries");
+            await Console.Out.WriteLineAsync($"  Skipped: {skippedCount} already baselined");
+            await Console.Out.WriteLineAsync($"  Total: {baseline.Entries.Count} entries");
+        }
+        else
+        {
+            await Console.Out.WriteLineAsync("No new entries to add to baseline");
+        }
+
+        return 0;
     }
 
     private static IEnumerable<IDetectionRule> CreateDetectionRules()

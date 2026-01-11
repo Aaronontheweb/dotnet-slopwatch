@@ -10,9 +10,10 @@ When LLMs generate code, they sometimes take shortcuts that make tests pass or b
 - **Suppressing warnings** instead of addressing them (`#pragma warning disable`)
 - **Swallowing exceptions** with empty catch blocks
 - **Adding arbitrary delays** to mask timing issues (`Task.Delay(1000)`)
+- **Project-level warning suppression** (`<NoWarn>`, `<TreatWarningsAsErrors>false</TreatWarningsAsErrors>`)
 - And more...
 
-Slopwatch catches these patterns in your git diffs before they make it into your codebase.
+Slopwatch catches these patterns before they make it into your codebase.
 
 ## Installation
 
@@ -24,49 +25,91 @@ dotnet tool install --global Slopwatch.Cmd
 dotnet tool install Slopwatch.Cmd
 ```
 
+## Quick Start
+
+```bash
+# 1. Install slopwatch
+dotnet tool install --global Slopwatch.Cmd
+
+# 2. Initialize in your project (creates baseline from existing code)
+cd your-project
+slopwatch init
+
+# 3. Commit the baseline to your repository
+git add .slopwatch/baseline.json
+git commit -m "Add slopwatch baseline"
+
+# 4. From now on, only NEW slop is detected
+slopwatch analyze
+```
+
+The baseline approach ensures slopwatch catches **new** slop being introduced without flagging legacy code. Your CI/CD pipeline will fail if someone introduces new slop patterns.
+
 ## Usage
 
-### Analyze current directory
+### Initialize a Project
+
 ```bash
-slopwatch analyze -d .
+# Create baseline from existing code
+slopwatch init
+
+# Force overwrite existing baseline
+slopwatch init --force
 ```
 
-### Analyze specific files
+This creates `.slopwatch/baseline.json` containing all existing detections. Commit this file to your repository.
+
+### Analyze for New Issues
+
 ```bash
-slopwatch analyze -f src/MyProject/MyFile.cs
+# Analyze current directory (requires baseline by default)
+slopwatch analyze
+
+# Analyze specific directory
+slopwatch analyze -d src/
+
+# Skip baseline and report ALL issues (not recommended for CI)
+slopwatch analyze --no-baseline
 ```
 
-### Use glob patterns
+### Update Baseline
+
+When you intentionally add code that triggers slopwatch (with proper justification):
+
 ```bash
-slopwatch analyze -d . -p "**/*.cs"
+# Add new detections to existing baseline
+slopwatch analyze --update-baseline
 ```
 
-### Output formats
+### Output Formats
+
 ```bash
 # Human-readable console output (default)
-slopwatch analyze -d .
+slopwatch analyze
 
 # JSON for programmatic use
-slopwatch analyze -d . --output json
+slopwatch analyze --output json
 ```
 
-### Exit codes
+### Exit Codes
+
 ```bash
 # Fail if errors found (default)
-slopwatch analyze -d . --fail-on error
+slopwatch analyze --fail-on error
 
 # Fail on warnings too
-slopwatch analyze -d . --fail-on warning
+slopwatch analyze --fail-on warning
 ```
 
 ## Detection Rules
 
-| Rule | Description |
-|------|-------------|
-| SW001 | Disabled tests via Skip, Ignore, or #if false |
-| SW002 | Warning suppression via pragma or SuppressMessage |
-| SW003 | Empty catch blocks that swallow exceptions |
-| SW004 | Arbitrary delays in test code |
+| Rule | Severity | Description |
+|------|----------|-------------|
+| SW001 | Error | Disabled tests via Skip, Ignore, or #if false |
+| SW002 | Warning | Warning suppression via pragma or SuppressMessage |
+| SW003 | Error | Empty catch blocks that swallow exceptions |
+| SW004 | Warning | Arbitrary delays in test code (Task.Delay, Thread.Sleep) |
+| SW005 | Warning | Project file slop (NoWarn, TreatWarningsAsErrors=false) |
 
 ## Claude Code Integration
 
@@ -98,6 +141,8 @@ The hook will run when you stop a coding session, analyzing all C# files in the 
 - name: Run Slopwatch
   run: slopwatch analyze -d . --output json --fail-on error
 ```
+
+**Note:** The baseline file (`.slopwatch/baseline.json`) should be committed to your repository. Run `slopwatch init` locally first.
 
 ### Azure DevOps
 ```yaml

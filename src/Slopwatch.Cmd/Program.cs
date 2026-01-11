@@ -24,9 +24,10 @@ public static class Program
 
         try
         {
-            return await Parser.Default.ParseArguments<AnalyzeCommand, ListRulesCommand>(args)
+            return await Parser.Default.ParseArguments<AnalyzeCommand, InitCommand, ListRulesCommand>(args)
                 .MapResult(
                     (AnalyzeCommand cmd) => cmd.ExecuteAsync(cts.Token),
+                    (InitCommand cmd) => cmd.ExecuteAsync(cts.Token),
                     (ListRulesCommand cmd) => cmd.ExecuteAsync(cts.Token),
                     errors => Task.FromResult(2));
         }
