@@ -86,7 +86,3 @@ Key packages needed:
 3. Keep changes focused and minimal
 4. Run tests after each significant change
 5. Use the todo list to track progress
-
-## OpenProse Workflow
-The implementation is orchestrated via `.claude-plugin/slopwatch-implementation.prose`.
-Run `/prose-boot` then execute the workflow to implement features systematically.
