@@ -1,3 +1,7 @@
-#### 1.0.0 April 10th 2025 ####
+#### 0.1.0 January 10th 2026 ####
 
-Example release notes
+Initial development release - project scaffolding and OpenProse workflow.
+
+* Project structure and build configuration
+* CLAUDE.md with development guidelines
+* OpenProse workflow for systematic implementation
