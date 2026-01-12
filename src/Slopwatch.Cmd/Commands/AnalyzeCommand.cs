@@ -179,7 +179,7 @@ public sealed class AnalyzeCommand
                 }
 
                 // Filter to only supported file types
-                var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".csproj" };
+                var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".csproj", ".props", ".targets" };
                 var filesToAnalyze = dirtyFiles
                     .Where(f => supportedExtensions.Contains(Path.GetExtension(f)))
                     .Where(File.Exists) // Skip deleted files
@@ -221,7 +221,7 @@ public sealed class AnalyzeCommand
                 }
 
                 // CommandLineParser initializes IEnumerable to empty (not null), so check Any()
-                var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj" };
+                var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj", "**/*.props", "**/*.targets" };
 
                 // Get the list of files to analyze
                 var fileList = analyzer.GetMatchingFiles(rootDirectory, patterns).ToList();
