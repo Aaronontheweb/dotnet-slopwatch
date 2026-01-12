@@ -273,7 +273,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
                 lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                 $"VersionOverride explicitly bypasses Central Package Management for '{packageName}' (version: {version})",
                 element.ToString(),
-                "Remove VersionOverride and use the centrally managed version in Directory.Packages.props, or add suppression comment with justification"
+                $"Remove VersionOverride='{version}' and update the version in Directory.Packages.props instead. If override is required, add: <!-- slopwatch-ignore: SW006 [your justification here] -->"
             );
         }
 
@@ -339,7 +339,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
                 lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                 $"Version attribute on PackageReference bypasses Central Package Management for '{packageName}' (version: {version})",
                 element.ToString(),
-                "Remove Version attribute and add package to Directory.Packages.props, or add suppression comment with justification"
+                $"Remove Version='{version}' from PackageReference and add '<PackageVersion Include=\"{packageName}\" Version=\"{version}\" />' to Directory.Packages.props. If inline version is required, add: <!-- slopwatch-ignore: SW006 [your justification here] -->"
             );
         }
 

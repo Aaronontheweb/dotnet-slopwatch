@@ -352,7 +352,7 @@ public class TestClass
         var result = Assert.Single(results);
         Assert.NotNull(result.SuggestedFix);
         Assert.Contains("Remove", result.SuggestedFix);
-        Assert.Contains("suppression", result.SuggestedFix);
+        Assert.Contains("SlopwatchSuppress", result.SuggestedFix);
     }
 
     [Fact]

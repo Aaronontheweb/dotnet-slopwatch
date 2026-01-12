@@ -411,7 +411,7 @@ public class ProjectFileRuleTests
         // Assert
         var result = Assert.Single(results);
         Assert.NotNull(result.SuggestedFix);
-        Assert.Contains("Enable", result.SuggestedFix);
+        Assert.Contains("TreatWarningsAsErrors", result.SuggestedFix);
     }
 
     [Fact]

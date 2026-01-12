@@ -398,21 +398,28 @@ public sealed class AnalyzeCommand
             return 0;
         }
 
-        // Output to stderr in a format Claude can understand
-        await Console.Error.WriteLineAsync("SLOPWATCH BLOCKED: Your edit introduced code that violates slopwatch rules.");
+        // Output to stderr in a format AI assistants and humans can understand
+        await Console.Error.WriteLineAsync("SLOPWATCH BLOCKED: Code changes violate slopwatch rules.");
         await Console.Error.WriteLineAsync();
+        await Console.Error.WriteLineAsync("=== VIOLATIONS ===");
 
         foreach (var issue in issues)
         {
             await Console.Error.WriteLineAsync($"- {issue.FilePath}:{issue.LineNumber} [{issue.RuleId}]: {issue.Message}");
             if (!string.IsNullOrEmpty(issue.SuggestedFix))
             {
-                await Console.Error.WriteLineAsync($"  Fix: {issue.SuggestedFix}");
+                await Console.Error.WriteLineAsync($"  Remediation: {issue.SuggestedFix}");
             }
         }
 
         await Console.Error.WriteLineAsync();
-        await Console.Error.WriteLineAsync("Fix these issues properly instead of working around them.");
+        await Console.Error.WriteLineAsync("=== REQUIRED ACTION ===");
+        await Console.Error.WriteLineAsync("You MUST fix these violations before proceeding. Do NOT:");
+        await Console.Error.WriteLineAsync("  - Ignore this warning and continue with other tasks");
+        await Console.Error.WriteLineAsync("  - Add more suppressions to hide the problem");
+        await Console.Error.WriteLineAsync("  - Disable tests, warnings, or error checking");
+        await Console.Error.WriteLineAsync();
+        await Console.Error.WriteLineAsync("Instead, address the root cause of each violation.");
 
         return 2;
     }

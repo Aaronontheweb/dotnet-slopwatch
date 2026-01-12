@@ -98,7 +98,7 @@ public sealed class TimeoutJigglingRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     $"Test uses Task.Delay({delayValue}) which may indicate a timing-dependent test",
                     invocation.ToString(),
-                    "Use proper synchronization (e.g., TaskCompletionSource, ManualResetEvent) or add suppression (attribute, inline comment, or config file)"
+                    "Replace Task.Delay with proper synchronization (TaskCompletionSource, SemaphoreSlim, or test framework's async helpers). If delay is intentional (testing timeouts), use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]"
                 );
             }
             // Check for Thread.Sleep
@@ -114,7 +114,7 @@ public sealed class TimeoutJigglingRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     $"Test uses Thread.Sleep({delayValue}) which may indicate a timing-dependent test",
                     invocation.ToString(),
-                    "Use proper synchronization (e.g., TaskCompletionSource, ManualResetEvent) or add suppression (attribute, inline comment, or config file)"
+                    "Replace Thread.Sleep with async Task.Delay or proper synchronization primitives. If delay is intentional (testing timeouts), use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]"
                 );
             }
             // Check for SpinWait
@@ -129,7 +129,7 @@ public sealed class TimeoutJigglingRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     "Test uses SpinWait which may indicate a timing-dependent test",
                     invocation.ToString(),
-                    "Use proper synchronization instead of busy-waiting or add suppression (attribute, inline comment, or config file)"
+                    "Replace SpinWait with proper synchronization primitives (ManualResetEventSlim, SemaphoreSlim). If SpinWait is intentional, use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]"
                 );
             }
         }
@@ -164,7 +164,7 @@ public sealed class TimeoutJigglingRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     "Test creates SpinWait instance which may indicate a timing-dependent test",
                     creation.ToString(),
-                    "Use proper synchronization instead of busy-waiting or add suppression (attribute, inline comment, or config file)"
+                    "Replace SpinWait with proper synchronization primitives (ManualResetEventSlim, SemaphoreSlim). If SpinWait is intentional, use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]"
                 );
             }
         }

@@ -393,7 +393,7 @@ public class TestClass
         // Assert
         var result = Assert.Single(results);
         Assert.NotNull(result.SuggestedFix);
-        Assert.Contains("Handle", result.SuggestedFix);
+        Assert.Contains("exception handling", result.SuggestedFix);
     }
 
     [Fact]

@@ -98,7 +98,7 @@ public sealed class EmptyCatchBlockRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     "Empty catch block swallows exceptions without handling",
                     GetCatchSnippet(catchClause),
-                    "Handle the exception, rethrow it, or add suppression (attribute, inline comment, or config file)"
+                    "Add proper exception handling (log and rethrow, or handle the error condition). If the empty catch is intentional, use [SlopwatchSuppress(\"SW003\", \"reason with 20+ chars\")]"
                 );
                 continue;
             }
@@ -115,7 +115,7 @@ public sealed class EmptyCatchBlockRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     "Catch block only logs exception without rethrowing or handling",
                     GetCatchSnippet(catchClause),
-                    "Consider rethrowing the exception or handling it appropriately"
+                    "Add 'throw;' after logging to rethrow, or add actual error handling. If logging-only is intentional, use [SlopwatchSuppress(\"SW003\", \"reason with 20+ chars\")]"
                 );
             }
         }

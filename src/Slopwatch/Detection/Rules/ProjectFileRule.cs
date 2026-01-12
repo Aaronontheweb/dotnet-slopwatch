@@ -186,7 +186,7 @@ public sealed class ProjectFileRule : IDetectionRule
                         lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                         $"Adding warnings to NoWarn: {warnings}",
                         element.ToString(),
-                        "Fix the underlying issues or add suppression comment with justification"
+                        $"Remove the NoWarn entry and fix the underlying code issues causing {warnings}. If suppression is truly necessary, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
                     );
                 }
             }
@@ -202,7 +202,7 @@ public sealed class ProjectFileRule : IDetectionRule
                     lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                     $"Setting NoWarn to suppress warnings: {value}",
                     element.ToString(),
-                    "Fix the underlying issues or add suppression comment with justification"
+                    $"Remove the NoWarn entry and fix the underlying code issues causing {value}. If suppression is truly necessary, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
                 );
             }
         }
@@ -252,7 +252,7 @@ public sealed class ProjectFileRule : IDetectionRule
                     lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                     "TreatWarningsAsErrors is disabled - warnings will not fail the build",
                     element.ToString(),
-                    "Enable TreatWarningsAsErrors or add suppression comment with justification"
+                    "Set TreatWarningsAsErrors to true and fix all warnings in the code. If you must disable it, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
                 );
             }
         }
@@ -302,7 +302,7 @@ public sealed class ProjectFileRule : IDetectionRule
                     lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                     "Nullable reference types are disabled",
                     element.ToString(),
-                    "Consider enabling nullable reference types or add suppression comment with justification"
+                    "Set Nullable to 'enable' and fix nullability warnings. If disabling is intentional, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
                 );
             }
         }
@@ -352,7 +352,7 @@ public sealed class ProjectFileRule : IDetectionRule
                     lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                     "WarningsAsErrors is empty - no warnings will be treated as errors",
                     element.ToString(),
-                    "Specify warnings to treat as errors or add suppression comment with justification"
+                    "Remove the empty WarningsAsErrors element or specify which warnings should be errors. If intentional, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
                 );
             }
         }
