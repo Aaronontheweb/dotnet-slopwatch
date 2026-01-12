@@ -34,7 +34,8 @@ tests/
 - **SW002**: Warning suppression (`#pragma warning disable`, `[SuppressMessage]`)
 - **SW003**: Empty catch blocks (swallowing exceptions)
 - **SW004**: Timeout jiggling (`Task.Delay`, `Thread.Sleep` in tests)
-- Additional rules to be discovered through research
+- **SW005**: Project file slop (`TreatWarningsAsErrors=false`, `NoWarn`, `Nullable=disable`)
+- **SW006**: CPM version override abuse (`VersionOverride`, `Version` when CPM enabled)
 
 ## Development Guidelines
 
@@ -79,6 +80,7 @@ If you see "SLOPWATCH BLOCKED" in a hook error, your edit introduced a "reward h
 - **SW003**: Don't use empty catch blocks that swallow exceptions
 - **SW004**: Don't add arbitrary delays (`Task.Delay`, `Thread.Sleep`) in tests
 - **SW005**: Don't disable `TreatWarningsAsErrors` or add to `NoWarn`
+- **SW006**: Don't bypass CPM with `VersionOverride` or inline `Version` attributes; update `Directory.Packages.props` instead
 
 **How to fix**: Read the specific error message and suggested fix. Implement a proper solution instead of working around the problem. If the suppression is genuinely needed, use `[SlopwatchSuppress("SW###", "justification with 20+ chars")]`.
 

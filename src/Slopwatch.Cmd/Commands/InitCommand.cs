@@ -160,6 +160,7 @@ public sealed class InitCommand
         yield return new EmptyCatchBlockRule();
         yield return new TimeoutJigglingRule();
         yield return new ProjectFileRule();
+        yield return new PackageVersionOverrideRule();
     }
 
     private static bool TryParseSeverity(string severityText, out DetectionSeverity severity)

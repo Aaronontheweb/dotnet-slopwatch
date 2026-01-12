@@ -27,6 +27,7 @@ When LLMs generate code, they sometimes take shortcuts that make tests pass or b
 - **Swallowing exceptions** with empty catch blocks
 - **Adding arbitrary delays** to mask timing issues (`Task.Delay(1000)`)
 - **Project-level warning suppression** (`<NoWarn>`, `<TreatWarningsAsErrors>false</TreatWarningsAsErrors>`)
+- **Bypassing Central Package Management** with `VersionOverride` or inline `Version` attributes
 - And more...
 
 Slopwatch catches these patterns before they make it into your codebase.
@@ -135,6 +136,7 @@ slopwatch analyze --stats
 | SW003 | Error | Empty catch blocks that swallow exceptions |
 | SW004 | Warning | Arbitrary delays in test code (Task.Delay, Thread.Sleep) |
 | SW005 | Warning | Project file slop (NoWarn, TreatWarningsAsErrors=false) |
+| SW006 | Warning | CPM bypass via VersionOverride or inline Version attributes |
 
 ## Claude Code Integration
 
@@ -207,7 +209,9 @@ Create a `.slopwatch/slopwatch.json` configuration file to customize behavior:
     "SW001": { "enabled": true, "severity": "error" },
     "SW002": { "enabled": true, "severity": "warning" },
     "SW003": { "enabled": true, "severity": "error" },
-    "SW004": { "enabled": true, "severity": "warning" }
+    "SW004": { "enabled": true, "severity": "warning" },
+    "SW005": { "enabled": true, "severity": "warning" },
+    "SW006": { "enabled": true, "severity": "warning" }
   },
   "exclude": ["**/Generated/**", "**/obj/**", "**/bin/**"]
 }
