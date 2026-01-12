@@ -150,7 +150,7 @@ public sealed class WarningSuppressRule : IDetectionRule
                 location.StartLinePosition.Character + 1,
                 $"#pragma warning disable for {warningText} without matching restore in same scope",
                 directive.ToString(),
-                "Add #pragma warning restore or add suppression (attribute, inline comment, or config file)"
+                $"Fix the code causing {warningText} and remove the #pragma, or add matching #pragma warning restore. If suppression is needed, use [SlopwatchSuppress(\"SW002\", \"reason with 20+ chars\")]"
             );
         }
 
@@ -209,7 +209,7 @@ public sealed class WarningSuppressRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     $"SuppressMessage attribute suppressing {suppressionInfo}",
                     attribute.ToString(),
-                    "Remove attribute or add suppression (attribute, inline comment, or config file)"
+                    $"Fix the code causing {suppressionInfo} and remove the SuppressMessage attribute. If suppression is needed, use [SlopwatchSuppress(\"SW002\", \"reason with 20+ chars\")]"
                 );
             }
         }
