@@ -2,7 +2,6 @@
   <PropertyGroup>
     <Copyright>Copyright © 2025-$([System.DateTime]::Now.Year) Aaron Stannard</Copyright>
     <Authors>Aaron Stannard</Authors>
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -23,8 +22,8 @@
   </PropertyGroup>
   <PropertyGroup>
     <!-- Target framework versions -->
-    <NetCoreVersion>net9.0</NetCoreVersion>
-    <NetCoreTestVersion>net9.0</NetCoreTestVersion>
+    <NetCoreVersion>net8.0</NetCoreVersion>
+    <NetCoreTestVersion>net8.0</NetCoreTestVersion>
   </PropertyGroup>
   <!-- GitHub SourceLink -->
   <ItemGroup>
