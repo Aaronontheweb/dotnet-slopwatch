@@ -1,3 +1,14 @@
+#### 0.2.1 January 11th 2026 ####
+
+**New Features:**
+* Added SW006 detection rule for Central Package Management (CPM) version override abuse (PR #25)
+  - Detects `VersionOverride` attribute on `PackageReference` (always flagged as it explicitly bypasses CPM)
+  - Detects `Version` attribute on `PackageReference` when CPM is enabled via `Directory.Packages.props` or `ManagePackageVersionsCentrally` setting
+  - Context-aware detection that only flags violations when CPM is actually in use
+* MSBuild `.props` and `.targets` files now analyzed by default (PR #24)
+  - Enables SW005 rule to detect warning suppression in `Directory.Build.props`, `Directory.Build.targets`, and custom MSBuild files
+  - Previously required explicit `-f` flag to analyze these files
+
 #### 0.2.0 January 11th 2026 ####
 
 **Performance Improvements:**
