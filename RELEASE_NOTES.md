@@ -1,3 +1,14 @@
+#### 0.3.0 January 12th 2026 ####
+
+**Compatibility:**
+* Downgraded to .NET 8 for broader compatibility across environments (PR #34)
+
+**Bug Fixes:**
+* MultiEdit tool now properly analyzed in Claude Code hook mode (PR #32)
+
+**Documentation:**
+* Improved hook error messages for clarity when working with programming assistants (PR #35)
+
 #### 0.2.1 January 11th 2026 ####
 
 **New Features:**
