@@ -4,7 +4,7 @@
     <!-- Nuget package versions -->
     <RoslynVersion>4.13.0</RoslynVersion>
     <CommandLineParserVersion>2.9.1</CommandLineParserVersion>
-    <FileSystemGlobbingVersion>9.0.0</FileSystemGlobbingVersion>
+    <FileSystemGlobbingVersion>8.0.0</FileSystemGlobbingVersion>
     <XunitVersion>2.9.3</XunitVersion>
     <XunitRunnerVersion>3.0.2</XunitRunnerVersion>
     <TestSdkVersion>17.12.0</TestSdkVersion>
