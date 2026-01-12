@@ -147,7 +147,7 @@ Add slopwatch as a hook to catch slop patterns during AI-assisted coding. Add th
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
