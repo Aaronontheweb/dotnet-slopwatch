@@ -9,7 +9,13 @@
     <!-- NuGet package configuration -->
     <IsPackable>true</IsPackable>
     <PackageId>Slopwatch</PackageId>
+
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Expose internals to test project -->
+    <InternalsVisibleTo Include="Slopwatch.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Akka.Streams" />

@@ -425,6 +425,7 @@ public sealed class AnalyzeCommand
         yield return new EmptyCatchBlockRule();
         yield return new TimeoutJigglingRule();
         yield return new ProjectFileRule();
+        yield return new PackageVersionOverrideRule();
     }
 
     private IOutputFormatter CreateOutputFormatter()
