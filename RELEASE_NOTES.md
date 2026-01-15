@@ -1,3 +1,13 @@
+#### 0.3.1 January 14th 2026 ####
+
+**Bug Fixes:**
+* Fixed `slopwatch --version` and `--help` returning exit code 2 instead of 0, which was breaking CI/CD pipelines (PR #44, fixes #43)
+* SW003 no longer flags catch blocks that log exceptions - logging IS handling for fire-and-forget operations, background jobs, and graceful degradation scenarios (PR #45, fixes #42)
+
+**Dependency Updates:**
+* Bump actions/setup-dotnet from 5.0.1 to 5.1.0 (PR #39)
+* Bump xunit.runner.visualstudio from 3.0.2 to 3.1.5 (PR #37)
+
 #### 0.3.0 January 12th 2026 ####
 
 **Compatibility:**
