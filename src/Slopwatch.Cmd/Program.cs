@@ -29,7 +29,7 @@ public static class Program
                     (AnalyzeCommand cmd) => cmd.ExecuteAsync(cts.Token),
                     (InitCommand cmd) => cmd.ExecuteAsync(cts.Token),
                     (ListRulesCommand cmd) => cmd.ExecuteAsync(cts.Token),
-                    errors => Task.FromResult(2));
+                    errors => Task.FromResult(HandleParseErrors(errors)));
         }
         catch (OperationCanceledException)
         {
@@ -41,5 +41,23 @@ public static class Program
             await Console.Error.WriteLineAsync($"Unhandled error: {ex.Message}");
             return 2;
         }
+    }
+
+    /// <summary>
+    /// Handles parse errors and returns the appropriate exit code.
+    /// </summary>
+    /// <param name="errors">The parse errors from CommandLineParser.</param>
+    /// <returns>0 for --version and --help requests, 2 for actual errors.</returns>
+    private static int HandleParseErrors(IEnumerable<Error> errors)
+    {
+        var errorList = errors.ToList();
+
+        // --version and --help are not errors, they should return 0
+        if (errorList.All(e => e is VersionRequestedError or HelpVerbRequestedError or HelpRequestedError))
+        {
+            return 0;
+        }
+
+        return 2;
     }
 }
