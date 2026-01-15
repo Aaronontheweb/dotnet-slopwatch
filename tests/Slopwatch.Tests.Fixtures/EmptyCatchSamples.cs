@@ -41,9 +41,9 @@ public class EmptyCatchSamples
         }
     }
 
-    // SHOULD TRIGGER: SW003 (Warning severity)
-    // Catch block that only logs without rethrowing
-    public void CatchWithOnlyLogging_ShouldTrigger()
+    // SHOULD NOT TRIGGER (logging IS handling)
+    // Catch block that logs is legitimate - fire-and-forget, background jobs, graceful degradation
+    public void CatchWithOnlyLogging_ShouldNotTrigger()
     {
         try
         {
@@ -53,13 +53,13 @@ public class EmptyCatchSamples
         catch (Exception ex)
         {
             Console.WriteLine($"Error occurred: {ex.Message}");
-            // Logs but doesn't rethrow or handle
+            // Logging IS handling - this is valid for fire-and-forget scenarios
         }
     }
 
-    // SHOULD TRIGGER: SW003 (Warning severity)
-    // Using logger but not rethrowing
-    public void CatchWithLogger_NoRethrow_ShouldTrigger()
+    // SHOULD NOT TRIGGER (logging IS handling)
+    // Using logger is valid handling - logs the failure for debugging
+    public void CatchWithLogger_NoRethrow_ShouldNotTrigger()
     {
         var logger = CreateLogger();
         try
@@ -70,7 +70,7 @@ public class EmptyCatchSamples
         catch (HttpRequestException ex)
         {
             logger.LogError($"API call failed: {ex}");
-            // Should rethrow or return error, not just log
+            // Logging is valid handling for non-critical operations
         }
     }
 
@@ -121,9 +121,9 @@ public class EmptyCatchSamples
         }
     }
 
-    // SHOULD TRIGGER: SW003 (Warning severity)
-    // Multiple catch blocks, one with only logging
-    public void MultipleCatchBlocks_OneWithOnlyLogging_ShouldTrigger()
+    // SHOULD NOT TRIGGER (logging IS handling)
+    // Multiple catch blocks, logging is valid handling
+    public void MultipleCatchBlocks_OneWithOnlyLogging_ShouldNotTrigger()
     {
         try
         {
@@ -136,7 +136,7 @@ public class EmptyCatchSamples
         }
         catch (Exception ex)
         {
-            // This one only logs
+            // Logging IS handling - valid for graceful degradation
             Console.WriteLine($"Unexpected error: {ex}");
         }
     }

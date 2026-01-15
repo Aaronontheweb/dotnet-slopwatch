@@ -15,8 +15,10 @@ namespace Slopwatch.Detection.Rules;
 /// <list type="bullet">
 /// <item><description>Are completely empty</description></item>
 /// <item><description>Only contain comments</description></item>
-/// <item><description>Only log without rethrowing or handling</description></item>
 /// </list>
+///
+/// Note: Catch blocks that log exceptions are NOT flagged. Logging IS handling
+/// for fire-and-forget operations, background jobs, and graceful degradation scenarios.
 ///
 /// Empty catch blocks often indicate:
 /// <list type="bullet">
@@ -98,24 +100,7 @@ public sealed class EmptyCatchBlockRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     "Empty catch block swallows exceptions without handling",
                     GetCatchSnippet(catchClause),
-                    "Add proper exception handling (log and rethrow, or handle the error condition). If the empty catch is intentional, use [SlopwatchSuppress(\"SW003\", \"reason with 20+ chars\")]"
-                );
-                continue;
-            }
-
-            // Check if catch block only logs without rethrowing
-            if (IsLoggingOnlyWithoutRethrow(catchClause))
-            {
-                yield return new DetectionResult(
-                    RuleId,
-                    Name,
-                    DetectionSeverity.Warning, // Lower severity for logging-only
-                    context.FilePath,
-                    lineNumber,
-                    location.StartLinePosition.Character + 1,
-                    "Catch block only logs exception without rethrowing or handling",
-                    GetCatchSnippet(catchClause),
-                    "Add 'throw;' after logging to rethrow, or add actual error handling. If logging-only is intentional, use [SlopwatchSuppress(\"SW003\", \"reason with 20+ chars\")]"
+                    "Add proper exception handling (log the error, or handle the error condition). If the empty catch is intentional, use [SlopwatchSuppress(\"SW003\", \"reason with 20+ chars\")]"
                 );
             }
         }
@@ -142,48 +127,6 @@ public sealed class EmptyCatchBlockRule : IDetectionRule
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Checks if a catch block only logs without rethrowing
-    /// </summary>
-    private static bool IsLoggingOnlyWithoutRethrow(CatchClauseSyntax catchClause)
-    {
-        if (catchClause.Block is null || catchClause.Block.Statements.Count == 0)
-            return false;
-
-        var statements = catchClause.Block.Statements;
-        var hasLogging = false;
-        var hasRethrow = false;
-        var hasOtherStatements = false;
-
-        foreach (var statement in statements)
-        {
-            var statementText = statement.ToString().ToLowerInvariant();
-
-            // Check for throw or throw ex
-            if (statement is ThrowStatementSyntax)
-            {
-                hasRethrow = true;
-            }
-            // Check for logging patterns
-            else if (statementText.Contains("log.") ||
-                     statementText.Contains("logger.") ||
-                     statementText.Contains("console.write") ||
-                     statementText.Contains("debug.write") ||
-                     statementText.Contains("trace.write"))
-            {
-                hasLogging = true;
-            }
-            // Any other statement means there's actual handling
-            else if (!string.IsNullOrWhiteSpace(statement.ToString().Trim()))
-            {
-                hasOtherStatements = true;
-            }
-        }
-
-        // Only flag if it's logging only without rethrow or other handling
-        return hasLogging && !hasRethrow && !hasOtherStatements;
     }
 
     /// <summary>
