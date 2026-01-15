@@ -79,9 +79,10 @@ public class TestClass
     }
 
     [Fact]
-    public void Test_DetectsLoggingOnlyCatch()
+    public void Test_IgnoresLoggingOnlyCatch()
     {
-        // Arrange
+        // Arrange - catch blocks with logging are NOT flagged
+        // Logging IS handling for fire-and-forget operations, background jobs, etc.
         const string code = @"
 public class TestClass
 {
@@ -104,18 +105,15 @@ public class TestClass
         // Act
         var results = RunRule(context);
 
-        // Assert
-        var result = Assert.Single(results);
-        Assert.Equal("SW003", result.RuleId);
-        Assert.Contains("only logs", result.Message);
-        Assert.Contains("without rethrowing", result.Message);
-        Assert.Equal(DetectionSeverity.Warning, result.Severity);
+        // Assert - logging is considered valid handling, not flagged
+        Assert.Empty(results);
     }
 
     [Fact]
-    public void Test_DetectsConsoleWriteOnlyCatch()
+    public void Test_IgnoresConsoleWriteOnlyCatch()
     {
-        // Arrange
+        // Arrange - catch blocks with console output are NOT flagged
+        // Logging to console IS handling for debugging and simple scenarios
         const string code = @"
 public class TestClass
 {
@@ -138,11 +136,8 @@ public class TestClass
         // Act
         var results = RunRule(context);
 
-        // Assert
-        var result = Assert.Single(results);
-        Assert.Equal("SW003", result.RuleId);
-        Assert.Contains("only logs", result.Message);
-        Assert.Equal(DetectionSeverity.Warning, result.Severity);
+        // Assert - console output is considered valid handling, not flagged
+        Assert.Empty(results);
     }
 
     [Fact]
@@ -341,9 +336,40 @@ public class TestClass
     }
 
     [Fact]
-    public void Test_DetectsMultipleCatchBlocks()
+    public void Test_DetectsMultipleEmptyCatchBlocks()
     {
         // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method1()
+    {
+        try { DoSomething(); }
+        catch (Exception) { }
+    }
+
+    public void Method2()
+    {
+        try { DoSomething(); }
+        catch (Exception) { }
+    }
+
+    private void DoSomething() { }
+}";
+        var context = CreateContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert - only empty catches are flagged, logging is allowed
+        Assert.Equal(2, results.Count);
+        Assert.All(results, r => Assert.Equal("SW003", r.RuleId));
+    }
+
+    [Fact]
+    public void Test_OnlyFlagsEmptyCatchNotLogging()
+    {
+        // Arrange - one empty catch and one logging catch
         const string code = @"
 public class TestClass
 {
@@ -366,9 +392,10 @@ public class TestClass
         // Act
         var results = RunRule(context);
 
-        // Assert
-        Assert.Equal(2, results.Count);
-        Assert.All(results, r => Assert.Equal("SW003", r.RuleId));
+        // Assert - only the empty catch is flagged, logging is allowed
+        var result = Assert.Single(results);
+        Assert.Equal("SW003", result.RuleId);
+        Assert.Equal(7, result.LineNumber);
     }
 
     [Fact]

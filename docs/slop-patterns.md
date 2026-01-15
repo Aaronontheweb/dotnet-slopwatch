@@ -135,7 +135,7 @@ namespace MyApp { ... }
 **Detection Methods**:
 - Roslyn pattern: `CatchClauseSyntax` with empty or whitespace-only block
 - Allow exceptions: Empty catch blocks with comments explaining intentional suppression
-- Refinement: Flag catches with only basic logging but no handling or recovery
+- Logging IS handling: Catch blocks containing logging calls (Log., Logger., Console.Write, etc.) are NOT flagged - logging is considered valid handling for fire-and-forget operations, background jobs, and graceful degradation scenarios
 
 **Example Violation**:
 ```csharp
@@ -165,21 +165,21 @@ public void SaveData(string data)
 try { ... }
 catch (Exception ex)
 {
-    // TODO: handle this
+    // TODO: handle this (no actual handling)
 }
 
 // Catch with only comment
 try { ... }
 catch (Exception ex)
 {
-    // This should never happen
+    // This should never happen (but no logging either)
 }
 
-// Catch-all with no logging
+// Catch-all with no logging or handling
 try { ... }
 catch (Exception)
 {
-    return null;
+    return null; // Silently returns null without logging
 }
 
 // Multiple empty catches
@@ -187,6 +187,11 @@ try { ... }
 catch (IOException) { }
 catch (TimeoutException) { }
 ```
+
+**Note**: Catch blocks with logging calls (Console.WriteLine, Logger.Error, etc.) are NOT flagged because logging IS handling for many legitimate scenarios:
+- Fire-and-forget operations (email sending, telemetry)
+- Background jobs where failures shouldn't crash the application
+- Graceful degradation where one subsystem's failure shouldn't affect others
 
 ---
 
