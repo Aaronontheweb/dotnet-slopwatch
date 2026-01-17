@@ -45,7 +45,7 @@ public class PackageVersionOverrideRuleTests : IDisposable
         Assert.Contains("VersionOverride", result.Message);
         Assert.Contains("Newtonsoft.Json", result.Message);
         Assert.Contains("13.0.1", result.Message);
-        Assert.Equal(DetectionSeverity.Warning, result.Severity);
+        Assert.Equal(DetectionSeverity.Error, result.Severity);
         Assert.Equal(3, result.LineNumber);
     }
 
