@@ -1,3 +1,8 @@
+#### 0.3.2 January 17th 2026 ####
+
+**Compatibility:**
+* SW006 now treats CPM package version overrides (`Version` and `VersionOverride`) as errors, preventing inline overrides when CPM is enabled (PR #48)
+
 #### 0.3.1 January 14th 2026 ####
 
 **Bug Fixes:**
