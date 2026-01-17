@@ -5,15 +5,9 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <VersionPrefix>0.3.0</VersionPrefix>
+    <VersionPrefix>0.3.2</VersionPrefix>
     <PackageReleaseNotes>**Compatibility:**
-* Downgraded to .NET 8 for broader compatibility across environments (PR #34)
-
-**Bug Fixes:**
-* MultiEdit tool now properly analyzed in Claude Code hook mode (PR #32)
-
-**Documentation:**
-* Improved hook error messages for clarity when working with programming assistants (PR #35)</PackageReleaseNotes>
+* SW006 now treats CPM package version overrides (`Version` and `VersionOverride`) as errors, preventing inline overrides when CPM is enabled (PR #48)</PackageReleaseNotes>
   </PropertyGroup>
   <PropertyGroup>
     <!-- Target framework versions -->
