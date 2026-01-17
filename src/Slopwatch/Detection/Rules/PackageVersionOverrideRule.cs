@@ -40,7 +40,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
         "when Central Package Management is enabled in the repository.";
 
     /// <inheritdoc />
-    public DetectionSeverity DefaultSeverity => DetectionSeverity.Warning;
+    public DetectionSeverity DefaultSeverity => DetectionSeverity.Error;
 
     /// <inheritdoc />
     public IReadOnlyList<string> ApplicableFilePatterns => new[] { "*.csproj", "*.props", "*.targets" };
@@ -267,7 +267,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
             yield return new DetectionResult(
                 RuleId,
                 Name,
-                DetectionSeverity.Warning,
+                DetectionSeverity.Error,
                 context.FilePath,
                 lineNumber,
                 lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
@@ -333,7 +333,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
             yield return new DetectionResult(
                 RuleId,
                 Name,
-                DetectionSeverity.Warning,
+                DetectionSeverity.Error,
                 context.FilePath,
                 lineNumber,
                 lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
