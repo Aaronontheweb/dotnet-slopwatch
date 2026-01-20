@@ -20,7 +20,7 @@ public sealed class AnalyzeCommand
     [Option('d', "directory", HelpText = "Directory to analyze (default: current directory)")]
     public string? Directory { get; set; }
 
-    [Option('p', "patterns", HelpText = "Glob patterns to match (default: **/*.cs, **/*.csproj)", Separator = ',')]
+    [Option('p', "patterns", HelpText = DefaultPatterns.HelpText, Separator = ',')]
     public IEnumerable<string>? Patterns { get; set; }
 
     [Option('o', "output", HelpText = "Output format: console, json (default: console)")]
@@ -221,7 +221,7 @@ public sealed class AnalyzeCommand
                 }
 
                 // CommandLineParser initializes IEnumerable to empty (not null), so check Any()
-                var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj", "**/*.props", "**/*.targets" };
+                var patterns = Patterns?.Any() == true ? Patterns.ToArray() : DefaultPatterns.FilePatterns;
 
                 // Get the list of files to analyze
                 var fileList = analyzer.GetMatchingFiles(rootDirectory, patterns).ToList();
