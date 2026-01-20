@@ -16,7 +16,7 @@ public sealed class InitCommand
     [Option('d', "directory", HelpText = "Directory to initialize (default: current directory)")]
     public string? Directory { get; set; }
 
-    [Option('p', "patterns", HelpText = "Glob patterns to match (default: **/*.cs, **/*.csproj)", Separator = ',')]
+    [Option('p', "patterns", HelpText = "Glob patterns to match (default: **/*.cs, **/*.csproj, **/*.props, **/*.targets)", Separator = ',')]
     public IEnumerable<string>? Patterns { get; set; }
 
     [Option("exclude", HelpText = "Patterns to exclude", Separator = ',')]
@@ -92,7 +92,7 @@ public sealed class InitCommand
 
             // Analyze directory
             // CommandLineParser initializes IEnumerable to empty (not null), so check Any()
-            var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj" };
+            var patterns = Patterns?.Any() == true ? Patterns.ToArray() : new[] { "**/*.cs", "**/*.csproj", "**/*.props", "**/*.targets" };
 
             await Console.Out.WriteLineAsync("Scanning for existing issues...");
 
