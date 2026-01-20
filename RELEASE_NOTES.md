@@ -1,3 +1,12 @@
+#### 0.3.3 January 20th 2026 ####
+
+**Bug Fixes:**
+* Fixed `slopwatch init` command to scan `.props` and `.targets` files, matching the patterns used by `analyze` - prevents incomplete baselines when projects have SW005 violations in MSBuild property files (PR #53, fixes #52)
+
+**Improvements:**
+* JSON output now uses relaxed escaping for human-readable characters - apostrophes appear as `'` instead of `\u0027` in baseline.json and JSON output (PR #54, fixes #50)
+* Centralized default file patterns into `DefaultPatterns` class to prevent drift between commands (PR #56)
+
 #### 0.3.2 January 17th 2026 ####
 
 **Compatibility:**
