@@ -1,0 +1,71 @@
+name: Feature Request
+description: Suggest a new feature or improvement for Slopwatch
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please describe your idea below.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Describe the problem you're trying to solve or the workflow you want to improve.
+      placeholder: I want to be able to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: A clear description of what you'd like to happen.
+      placeholder: Describe your proposed solution...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: request-type
+    attributes:
+      label: Request Type
+      description: What type of feature is this?
+      options:
+        - New detection rule (SW###)
+        - CLI improvement
+        - Output format enhancement
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: detection-rule
+    attributes:
+      label: Detection Rule Details (if applicable)
+      description: |
+        If you're proposing a new detection rule, please provide:
+        - Rule ID: SW### (suggest a number)
+        - Rule Name: e.g., `HardcodedSecrets`
+        - What pattern does this detect?
+        - Code examples that should trigger this rule
+        - Why it's "slop" (reward hacking or problematic shortcut)
+      render: markdown
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or workarounds you've considered.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or examples about the feature request here.
+    validations:
+      required: false
