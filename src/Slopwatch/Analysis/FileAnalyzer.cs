@@ -65,8 +65,22 @@ public sealed class FileAnalyzer
         // Read file content
         var content = await File.ReadAllTextAsync(filePath, cancellationToken);
 
+        // Create detection context
+        var context = CreateDetectionContext(filePath, content);
+
+        // Files with embedded C# (e.g. .razor, .cshtml) produce a syntax tree from
+        // generated code. Track this so we can remap line numbers after rules run.
+        var hasGeneratedSource = context.SyntaxTree is not null
+            && !filePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
+
+        // For files that contain embedded C#, look up rules using the effective
+        // analysis type so all C# rules apply automatically.
+        var ruleMatchPath = hasGeneratedSource
+            ? Path.ChangeExtension(filePath, ".cs")
+            : filePath;
+
         // Get applicable rules
-        var rules = _ruleRegistry.GetRulesForFile(filePath);
+        var rules = _ruleRegistry.GetRulesForFile(ruleMatchPath);
 
         // Filter rules based on options
         var enabledRules = rules.Where(r => _options.IsRuleEnabled(r.RuleId)).ToList();
@@ -76,16 +90,17 @@ public sealed class FileAnalyzer
             yield break;
         }
 
-        // Create detection context
-        var context = CreateDetectionContext(filePath, content);
-
         // Run all applicable rules and yield results
         await foreach (var result in RunRulesAsync(enabledRules, context, cancellationToken))
         {
             // Filter by minimum severity
             if (result.Severity >= _options.MinimumSeverity)
             {
-                yield return result;
+                // For generated sources, remap line numbers from the generated C#
+                // back to the original file using #line directive mappings.
+                yield return hasGeneratedSource
+                    ? RemapLineNumber(result, context.SyntaxTree!)
+                    : result;
             }
         }
     }
@@ -199,6 +214,21 @@ public sealed class FileAnalyzer
             {
                 // If parsing fails, continue without syntax tree
                 // The content will still be available for text-based analysis
+            }
+        }
+        else if (filePath.EndsWith(".razor", StringComparison.OrdinalIgnoreCase))
+        {
+            var generatedCSharp = RazorCodeExtractor.ExtractGeneratedCSharp(content, filePath);
+            if (generatedCSharp is not null)
+            {
+                try
+                {
+                    syntaxTree = CSharpSyntaxTree.ParseText(generatedCSharp, path: filePath);
+                }
+                catch
+                {
+                    // If parsing fails, continue without syntax tree
+                }
             }
         }
 
@@ -333,5 +363,33 @@ public sealed class FileAnalyzer
                 yield return result;
             }
         }
+    }
+
+    /// <summary>
+    /// Remaps a detection result's line number from generated code positions back to
+    /// the original source file using #line directive mappings in the syntax tree.
+    /// </summary>
+    private static DetectionResult RemapLineNumber(DetectionResult result, SyntaxTree syntaxTree)
+    {
+        // The result's LineNumber is 1-based from GetLineSpan() in the generated code.
+        // We need to find the corresponding position in the syntax tree and use
+        // GetMappedLineSpan() to resolve the #line directives back to the original file.
+        var generatedLine = result.LineNumber - 1; // 0-based for Roslyn
+        var text = syntaxTree.GetText();
+
+        if (generatedLine < 0 || generatedLine >= text.Lines.Count)
+            return result;
+
+        var position = text.Lines[generatedLine].Start;
+        var mappedSpan = syntaxTree.GetMappedLineSpan(new Microsoft.CodeAnalysis.Text.TextSpan(position, 0));
+
+        if (!mappedSpan.HasMappedPath && !mappedSpan.IsValid)
+            return result;
+
+        return result with
+        {
+            LineNumber = mappedSpan.StartLinePosition.Line + 1,
+            Column = mappedSpan.StartLinePosition.Character + 1
+        };
     }
 }
