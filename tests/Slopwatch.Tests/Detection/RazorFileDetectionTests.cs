@@ -63,6 +63,49 @@ public class RazorFileDetectionTests
     }
 
     [Fact]
+    public async Task SW003_DetectsEmptyCatchInCshtmlCodeBlock()
+    {
+        // Arrange - a .cshtml file with an empty catch block in a Razor code block
+        var cshtmlContent = """
+            @{
+                try
+                {
+                    var value = 1;
+                }
+                catch (Exception)
+                {
+                }
+            }
+            """;
+
+        var rule = new EmptyCatchBlockRule();
+        var analyzer = new FileAnalyzer(new IDetectionRule[] { rule });
+
+        // Write to a temp .cshtml file
+        var tempFile = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid()}.cshtml");
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, cshtmlContent);
+
+            // Act
+            var results = new List<DetectionResult>();
+            await foreach (var result in analyzer.AnalyzeFileAsync(tempFile))
+            {
+                results.Add(result);
+            }
+
+            // Assert
+            var detection = Assert.Single(results);
+            Assert.Equal("SW003", detection.RuleId);
+            Assert.Contains("Empty catch block", detection.Message);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
     public async Task SW003_MapsLineNumberBackToOriginalRazorFile()
     {
         // Arrange - each line is explicitly numbered so we can assert the mapped line.

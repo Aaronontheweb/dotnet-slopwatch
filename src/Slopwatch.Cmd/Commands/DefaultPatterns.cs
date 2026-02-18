@@ -7,11 +7,13 @@ internal static class DefaultPatterns
 {
     /// <summary>
     /// Default glob patterns for scanning .NET projects.
-    /// Includes C# source files and MSBuild project/props/targets files.
+    /// Includes C# and Razor source files plus MSBuild project/props/targets files.
     /// </summary>
     public static readonly string[] FilePatterns =
     {
         "**/*.cs",
+        "**/*.razor",
+        "**/*.cshtml",
         "**/*.csproj",
         "**/*.props",
         "**/*.targets"
@@ -20,5 +22,5 @@ internal static class DefaultPatterns
     /// <summary>
     /// Human-readable description of the default patterns for help text.
     /// </summary>
-    public const string HelpText = "Glob patterns to match (default: **/*.cs, **/*.csproj, **/*.props, **/*.targets)";
+    public const string HelpText = "Glob patterns to match (default: **/*.cs, **/*.razor, **/*.cshtml, **/*.csproj, **/*.props, **/*.targets)";
 }

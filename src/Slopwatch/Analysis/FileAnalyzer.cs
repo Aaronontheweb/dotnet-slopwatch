@@ -216,7 +216,8 @@ public sealed class FileAnalyzer
                 // The content will still be available for text-based analysis
             }
         }
-        else if (filePath.EndsWith(".razor", StringComparison.OrdinalIgnoreCase))
+        else if (filePath.EndsWith(".razor", StringComparison.OrdinalIgnoreCase)
+            || filePath.EndsWith(".cshtml", StringComparison.OrdinalIgnoreCase))
         {
             var generatedCSharp = RazorCodeExtractor.ExtractGeneratedCSharp(content, filePath);
             if (generatedCSharp is not null)
@@ -228,6 +229,7 @@ public sealed class FileAnalyzer
                 catch
                 {
                     // If parsing fails, continue without syntax tree
+                    syntaxTree = null;
                 }
             }
         }

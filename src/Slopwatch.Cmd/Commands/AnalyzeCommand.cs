@@ -179,7 +179,7 @@ public sealed class AnalyzeCommand
                 }
 
                 // Filter to only supported file types
-                var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".csproj", ".props", ".targets" };
+                var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".razor", ".cshtml", ".csproj", ".props", ".targets" };
                 var filesToAnalyze = dirtyFiles
                     .Where(f => supportedExtensions.Contains(Path.GetExtension(f)))
                     .Where(File.Exists) // Skip deleted files
