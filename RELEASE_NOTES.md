@@ -1,3 +1,8 @@
+#### 0.3.4 February 18th 2026 ####
+
+**New Features:**
+* `.razor` files (Blazor) are now scanned by default - SW001-SW006 detection rules apply to Razor components without requiring explicit `-f` flags (PR #64)
+
 #### 0.3.3 January 20th 2026 ####
 
 **Bug Fixes:**
