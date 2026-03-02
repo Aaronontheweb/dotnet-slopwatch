@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis.CSharp;
 using Slopwatch.Detection;
 using Slopwatch.Detection.Rules;
+using Slopwatch.Suppression;
 using Xunit;
 
 namespace Slopwatch.Tests.Detection;
@@ -541,6 +542,61 @@ public class TestClass
         // Assert
         var result = Assert.Single(results);
         Assert.Equal(7, result.LineNumber);
+    }
+
+    [Fact]
+    public void Test_ConfigSuppression_FromCustomConfigPath_SuppressesDetection()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Method()
+    {
+        try
+        {
+            DoSomething();
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private void DoSomething() { }
+}";
+
+        var configPath = Path.Combine(Path.GetTempPath(), $"slopwatch-config-{Guid.NewGuid():N}.json");
+        const string configJson = @"{
+  ""suppressions"": [],
+  ""globalSuppressions"": [
+    {
+      ""ruleId"": ""SW003"",
+      ""justification"": ""Test-only global suppression to validate custom config loading path""
+    }
+  ]
+}";
+
+        File.WriteAllText(configPath, configJson);
+        AppContext.SetData(SuppressionChecker.ConfigPathContextKey, configPath);
+
+        try
+        {
+            var context = CreateContext(code);
+
+            // Act
+            var results = RunRule(context);
+
+            // Assert
+            Assert.Empty(results);
+        }
+        finally
+        {
+            AppContext.SetData(SuppressionChecker.ConfigPathContextKey, null);
+            if (File.Exists(configPath))
+            {
+                File.Delete(configPath);
+            }
+        }
     }
 
     #region Helper Methods
