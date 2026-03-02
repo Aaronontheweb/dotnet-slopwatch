@@ -39,7 +39,8 @@ Slopwatch catches these patterns before they make it into your codebase.
 dotnet tool install --global Slopwatch.Cmd
 
 # Or install locally
-dotnet tool install Slopwatch.Cmd
+dotnet new tool-manifest
+dotnet tool install --local Slopwatch.Cmd
 ```
 
 ## Quick Start
@@ -136,7 +137,7 @@ slopwatch analyze --stats
 | SW003 | Error | Empty catch blocks that swallow exceptions |
 | SW004 | Warning | Arbitrary delays in test code (Task.Delay, Thread.Sleep) |
 | SW005 | Warning | Project file slop (NoWarn, TreatWarningsAsErrors=false) |
-| SW006 | Warning | CPM bypass via VersionOverride or inline Version attributes |
+| SW006 | Error | CPM bypass via VersionOverride or inline Version attributes |
 
 ## Claude Code Integration
 
@@ -200,27 +201,36 @@ Claude will see the formatted error message and can then fix the issue properly.
 
 ## Configuration
 
-Create a `.slopwatch/slopwatch.json` configuration file to customize behavior:
+Create a `.slopwatch/config.json` file to define suppressions:
 
 ```json
 {
-  "minSeverity": "warning",
-  "rules": {
-    "SW001": { "enabled": true, "severity": "error" },
-    "SW002": { "enabled": true, "severity": "warning" },
-    "SW003": { "enabled": true, "severity": "error" },
-    "SW004": { "enabled": true, "severity": "warning" },
-    "SW005": { "enabled": true, "severity": "warning" },
-    "SW006": { "enabled": true, "severity": "warning" }
-  },
-  "exclude": ["**/Generated/**", "**/obj/**", "**/bin/**"]
+  "suppressions": [
+    {
+      "ruleId": "SW002",
+      "pattern": "**/Generated/**",
+      "justification": "Generated code from tooling cannot be manually changed"
+    },
+    {
+      "ruleId": "SW006",
+      "pattern": "src/Legacy/**",
+      "justification": "Legacy CPM migration in progress; tracked in issue #123"
+    }
+  ],
+  "globalSuppressions": []
 }
 ```
 
-Use the `-c` or `--config` option to specify a custom configuration file location:
+Use the `-c` or `--config` option to specify a custom suppression config file location:
 
 ```bash
 slopwatch analyze -d . --config path/to/config.json
+```
+
+To exclude files or directories from analysis entirely, use `--exclude`:
+
+```bash
+slopwatch analyze -d . --exclude "**/Generated/**,**/obj/**,**/bin/**"
 ```
 
 ## Building from Source

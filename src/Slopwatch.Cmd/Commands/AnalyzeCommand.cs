@@ -5,6 +5,7 @@ using Slopwatch.Baseline;
 using Slopwatch.Cmd.Output;
 using Slopwatch.Detection;
 using Slopwatch.Detection.Rules;
+using Slopwatch.Suppression;
 
 namespace Slopwatch.Cmd.Commands;
 
@@ -121,6 +122,26 @@ public sealed class AnalyzeCommand
             // Determine root directory
             var rootDirectory = Directory ?? System.IO.Directory.GetCurrentDirectory();
 
+            // Resolve and validate custom suppression config path
+            if (!string.IsNullOrWhiteSpace(ConfigFile))
+            {
+                var resolvedConfigPath = Path.IsPathRooted(ConfigFile)
+                    ? ConfigFile
+                    : Path.GetFullPath(Path.Combine(rootDirectory, ConfigFile));
+
+                if (!File.Exists(resolvedConfigPath))
+                {
+                    await Console.Error.WriteLineAsync($"Configuration file not found: {resolvedConfigPath}");
+                    return 2;
+                }
+
+                AppContext.SetData(SuppressionChecker.ConfigPathContextKey, resolvedConfigPath);
+            }
+            else
+            {
+                AppContext.SetData(SuppressionChecker.ConfigPathContextKey, null);
+            }
+
             // Load baseline (required by default unless --no-baseline or --create-baseline)
             Baseline.BaselineFile? baseline = null;
             var useBaseline = !NoBaseline && string.IsNullOrEmpty(CreateBaseline);
@@ -165,35 +186,39 @@ public sealed class AnalyzeCommand
             var analyzer = new FileAnalyzer(rules, options);
 
             // Determine what to analyze
-            IAsyncEnumerable<DetectionResult> results;
+            IAsyncEnumerable<DetectionResult>? results = null;
 
             // In hook mode, only analyze dirty files from git status (much faster)
             if (HookMode && !(Files?.Any() == true))
             {
-                var dirtyFiles = await GetDirtyFilesAsync(rootDirectory, cancellationToken);
+                var dirtyFilesResult = await GetDirtyFilesAsync(rootDirectory, cancellationToken);
 
-                if (dirtyFiles.Count == 0)
+                if (dirtyFilesResult.GitAvailable)
                 {
-                    // No dirty files, nothing to analyze
-                    return 0;
+                    if (dirtyFilesResult.Files.Count == 0)
+                    {
+                        // No dirty files, nothing to analyze
+                        return 0;
+                    }
+
+                    // Filter to only supported file types
+                    var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".razor", ".cshtml", ".csproj", ".props", ".targets" };
+                    var filesToAnalyze = dirtyFilesResult.Files
+                        .Where(f => supportedExtensions.Contains(Path.GetExtension(f)))
+                        .Where(File.Exists) // Skip deleted files
+                        .ToList();
+
+                    if (filesToAnalyze.Count == 0)
+                    {
+                        return 0;
+                    }
+
+                    filesAnalyzed = filesToAnalyze.Count;
+                    results = analyzer.AnalyzeFilesAsync(filesToAnalyze, cancellationToken);
                 }
-
-                // Filter to only supported file types
-                var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".razor", ".cshtml", ".csproj", ".props", ".targets" };
-                var filesToAnalyze = dirtyFiles
-                    .Where(f => supportedExtensions.Contains(Path.GetExtension(f)))
-                    .Where(File.Exists) // Skip deleted files
-                    .ToList();
-
-                if (filesToAnalyze.Count == 0)
-                {
-                    return 0;
-                }
-
-                filesAnalyzed = filesToAnalyze.Count;
-                results = analyzer.AnalyzeFilesAsync(filesToAnalyze, cancellationToken);
             }
-            else if (Files is not null && Files.Any())
+
+            if (results is null && Files is not null && Files.Any())
             {
                 // Analyze specific files
                 var filePaths = Files.Select(f => Path.GetFullPath(f)).ToList();
@@ -211,7 +236,8 @@ public sealed class AnalyzeCommand
                 filesAnalyzed = filePaths.Count;
                 results = analyzer.AnalyzeFilesAsync(filePaths, cancellationToken);
             }
-            else
+
+            if (results is null)
             {
                 // Analyze directory
                 if (!System.IO.Directory.Exists(rootDirectory))
@@ -241,22 +267,24 @@ public sealed class AnalyzeCommand
                 }
             }
 
+            var activeResults = results!;
+
             // Handle --create-baseline mode
             if (!string.IsNullOrEmpty(CreateBaseline))
             {
-                return await CreateBaselineAsync(results, rootDirectory, CreateBaseline, cancellationToken);
+                return await CreateBaselineAsync(activeResults, rootDirectory, CreateBaseline, cancellationToken);
             }
 
             // Handle --update-baseline mode
             if (UpdateBaseline && baseline is not null)
             {
-                return await UpdateBaselineAsync(results, rootDirectory, baseline, resolvedBaselinePath, cancellationToken);
+                return await UpdateBaselineAsync(activeResults, rootDirectory, baseline, resolvedBaselinePath, cancellationToken);
             }
 
             // Filter against baseline if specified
             if (baseline is not null)
             {
-                results = baseline.FilterNewDetectionsAsync(results, rootDirectory);
+                activeResults = baseline.FilterNewDetectionsAsync(activeResults, rootDirectory);
             }
 
             // Hook mode: collect results, output to stderr, exit with code 2 on failure
@@ -265,7 +293,7 @@ public sealed class AnalyzeCommand
             {
                 // Use warning severity by default in hook mode, or user-specified --fail-on if stricter
                 var hookSeverity = failOnSeverity < DetectionSeverity.Warning ? failOnSeverity : DetectionSeverity.Warning;
-                return await ExecuteHookModeAsync(results, hookSeverity, cancellationToken);
+                return await ExecuteHookModeAsync(activeResults, hookSeverity, cancellationToken);
             }
 
             // Normal mode: format and output to stdout
@@ -273,7 +301,7 @@ public sealed class AnalyzeCommand
 
             // Track results for exit code determination
             var issueTracker = new IssueTracker(failOnSeverity);
-            var trackedResults = TrackResultsAsync(results, issueTracker, cancellationToken);
+            var trackedResults = TrackResultsAsync(activeResults, issueTracker, cancellationToken);
 
             // Format and output results
             await formatter.FormatAsync(trackedResults, Console.Out, cancellationToken);
@@ -481,8 +509,8 @@ public sealed class AnalyzeCommand
     /// </summary>
     /// <param name="rootDirectory">The root directory to run git status in.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>List of absolute file paths that are dirty in git.</returns>
-    private static async Task<List<string>> GetDirtyFilesAsync(string rootDirectory, CancellationToken cancellationToken)
+    /// <returns>Dirty file list and whether git query succeeded.</returns>
+    private static async Task<DirtyFilesResult> GetDirtyFilesAsync(string rootDirectory, CancellationToken cancellationToken)
     {
         var dirtyFiles = new List<string>();
 
@@ -502,7 +530,7 @@ public sealed class AnalyzeCommand
             using var process = Process.Start(psi);
             if (process is null)
             {
-                return dirtyFiles;
+                return new DirtyFilesResult(dirtyFiles, false);
             }
 
             var output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
@@ -510,7 +538,7 @@ public sealed class AnalyzeCommand
 
             if (process.ExitCode != 0)
             {
-                return dirtyFiles;
+                return new DirtyFilesResult(dirtyFiles, false);
             }
 
             // Parse git status --porcelain output
@@ -542,12 +570,14 @@ public sealed class AnalyzeCommand
         catch (Exception)
         {
             // If git fails for any reason (not installed, not a repo, etc.),
-            // return empty list so slopwatch falls back to full analysis
-            return dirtyFiles;
+            // return failure so caller can fall back to full analysis
+            return new DirtyFilesResult(dirtyFiles, false);
         }
 
-        return dirtyFiles;
+        return new DirtyFilesResult(dirtyFiles, true);
     }
+
+    private sealed record DirtyFilesResult(List<string> Files, bool GitAvailable);
 
     /// <summary>
     /// Helper class to track issues and determine if we should fail.
