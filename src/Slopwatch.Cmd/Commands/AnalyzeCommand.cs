@@ -135,11 +135,11 @@ public sealed class AnalyzeCommand
                     return 2;
                 }
 
-                AppContext.SetData(SuppressionChecker.ConfigPathContextKey, resolvedConfigPath);
+                SuppressionChecker.SetConfigPathOverride(resolvedConfigPath);
             }
             else
             {
-                AppContext.SetData(SuppressionChecker.ConfigPathContextKey, null);
+                SuppressionChecker.SetConfigPathOverride(null);
             }
 
             // Load baseline (required by default unless --no-baseline or --create-baseline)
@@ -330,6 +330,10 @@ public sealed class AnalyzeCommand
                 await Console.Error.WriteLineAsync($"  {ex.InnerException.Message}");
             }
             return 2;
+        }
+        finally
+        {
+            SuppressionChecker.SetConfigPathOverride(null);
         }
     }
 

@@ -577,7 +577,7 @@ public class TestClass
 }";
 
         File.WriteAllText(configPath, configJson);
-        AppContext.SetData(SuppressionChecker.ConfigPathContextKey, configPath);
+        SuppressionChecker.SetConfigPathOverride(configPath);
 
         try
         {
@@ -591,7 +591,7 @@ public class TestClass
         }
         finally
         {
-            AppContext.SetData(SuppressionChecker.ConfigPathContextKey, null);
+            SuppressionChecker.SetConfigPathOverride(null);
             if (File.Exists(configPath))
             {
                 File.Delete(configPath);
