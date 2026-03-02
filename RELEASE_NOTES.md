@@ -1,3 +1,12 @@
+#### 0.4.0 March 2nd 2026 ####
+
+**Bug Fixes:**
+* `--config` flag now properly loads custom suppression configurations during analysis - the option was previously documented but not wired into the analysis pipeline (PR #71)
+* Hook mode now falls back to full file analysis when `git status` is unavailable (e.g., outside a git repository), instead of silently returning no results (PR #71)
+
+**Documentation:**
+* Updated README examples to reflect correct `.slopwatch/config.json` schema, SW006 severity levels, and local tool installation instructions (PR #71)
+
 #### 0.3.4 February 18th 2026 ####
 
 **New Features:**
