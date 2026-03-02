@@ -5,9 +5,13 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <VersionPrefix>0.3.2</VersionPrefix>
-    <PackageReleaseNotes>**Compatibility:**
-* SW006 now treats CPM package version overrides (`Version` and `VersionOverride`) as errors, preventing inline overrides when CPM is enabled (PR #48)</PackageReleaseNotes>
+    <VersionPrefix>0.4.0</VersionPrefix>
+    <PackageReleaseNotes>**Bug Fixes:**
+* `--config` flag now properly loads custom suppression configurations during analysis - the option was previously documented but not wired into the analysis pipeline (PR #71)
+* Hook mode now falls back to full file analysis when `git status` is unavailable (e.g., outside a git repository), instead of silently returning no results (PR #71)
+
+**Documentation:**
+* Updated README examples to reflect correct `.slopwatch/config.json` schema, SW006 severity levels, and local tool installation instructions (PR #71)</PackageReleaseNotes>
   </PropertyGroup>
   <PropertyGroup>
     <!-- Target framework versions -->
