@@ -12,6 +12,8 @@ namespace Slopwatch.Suppression;
 /// </summary>
 public sealed class SuppressionChecker
 {
+    public const string ConfigPathContextKey = "Slopwatch.ConfigPath";
+
     private readonly SlopwatchConfig? _config;
     private readonly List<InlineCommentSuppression> _inlineSuppressions;
     private readonly string _projectRoot;
@@ -187,7 +189,12 @@ public sealed class SuppressionChecker
         string projectRoot,
         CancellationToken cancellationToken)
     {
-        var configPath = Path.Combine(projectRoot, ".slopwatch", "config.json");
+        var overridePath = AppContext.GetData(ConfigPathContextKey) as string;
+        var configPath = string.IsNullOrWhiteSpace(overridePath)
+            ? Path.Combine(projectRoot, ".slopwatch", "config.json")
+            : (Path.IsPathRooted(overridePath)
+                ? overridePath
+                : Path.GetFullPath(Path.Combine(projectRoot, overridePath)));
 
         if (!File.Exists(configPath))
             return null;
