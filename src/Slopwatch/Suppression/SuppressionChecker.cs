@@ -13,10 +13,16 @@ namespace Slopwatch.Suppression;
 public sealed class SuppressionChecker
 {
     public const string ConfigPathContextKey = "Slopwatch.ConfigPath";
+    private static readonly AsyncLocal<string?> ConfigPathOverride = new();
 
     private readonly SlopwatchConfig? _config;
     private readonly List<InlineCommentSuppression> _inlineSuppressions;
     private readonly string _projectRoot;
+
+    public static void SetConfigPathOverride(string? configPath)
+    {
+        ConfigPathOverride.Value = configPath;
+    }
 
     /// <summary>
     /// Initializes a new instance of <see cref="SuppressionChecker"/>.
@@ -189,7 +195,7 @@ public sealed class SuppressionChecker
         string projectRoot,
         CancellationToken cancellationToken)
     {
-        var overridePath = AppContext.GetData(ConfigPathContextKey) as string;
+        var overridePath = ConfigPathOverride.Value;
         var configPath = string.IsNullOrWhiteSpace(overridePath)
             ? Path.Combine(projectRoot, ".slopwatch", "config.json")
             : (Path.IsPathRooted(overridePath)
