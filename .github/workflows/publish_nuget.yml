@@ -46,11 +46,21 @@ jobs:
     - name: Push Packages to NuGet
       run: dotnet nuget push "output/*.nupkg" --skip-duplicate -k ${{ secrets.NUGET_KEY }} -s https://api.nuget.org/v3/index.json
 
+    - name: "Extract latest release notes"
+      shell: pwsh
+      run: |
+        $content = Get-Content RELEASE_NOTES.md -Raw
+        if ($content -match '(?s)(####.+?)(?=\n####|\z)') {
+          $Matches[1].Trim() | Set-Content RELEASE_NOTES_LATEST.md
+        } else {
+          $content | Set-Content RELEASE_NOTES_LATEST.md
+        }
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         name: 'Slopwatch ${{ github.ref_name }}'
-        body_path: RELEASE_NOTES.md
+        body_path: RELEASE_NOTES_LATEST.md
         files: 'output/*.nupkg'
         draft: false
         prerelease: false
