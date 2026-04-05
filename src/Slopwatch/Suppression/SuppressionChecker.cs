@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.FileSystemGlobbing;
+using Slopwatch.Analysis;
 using Slopwatch.Configuration;
 using Slopwatch.Detection;
 
@@ -28,13 +29,12 @@ public sealed class SuppressionChecker
     /// Initializes a new instance of <see cref="SuppressionChecker"/>.
     /// </summary>
     /// <param name="context">The detection context.</param>
-    /// <param name="projectRoot">The root directory of the project (for config file loading).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public static async Task<SuppressionChecker> CreateAsync(
         DetectionContext context,
-        string projectRoot,
         CancellationToken cancellationToken = default)
     {
+        var projectRoot = ProjectRootLocator.FindRoot(context.FilePath);
         var config = await LoadConfigAsync(projectRoot, cancellationToken);
 
         var inlineSuppressions = context.SyntaxTree != null
