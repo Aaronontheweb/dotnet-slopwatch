@@ -282,7 +282,8 @@ public sealed class DisabledTestRule : IDetectionRule
                 // Look for common project root indicators
                 if (Directory.Exists(Path.Combine(directory, ".git")) ||
                     Directory.Exists(Path.Combine(directory, ".slopwatch")) ||
-                    Directory.GetFiles(directory, "*.sln").Any())
+                    Directory.GetFiles(directory, "*.sln").Any() ||
+                    Directory.GetFiles(directory, "*.slnx").Any())
                 {
                     return directory;
                 }
