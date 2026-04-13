@@ -1,15 +1,15 @@
 {
   "version": 1,
   "createdAt": "2026-01-11T16:03:39.2213093+00:00",
-  "updatedAt": "2026-01-11T16:03:39.2283389+00:00",
-  "description": "Initial baseline created by \u0027slopwatch init\u0027 on 2026-01-11 16:03:39 UTC",
+  "updatedAt": "2026-04-13T20:06:27.3536741+00:00",
+  "description": "Initial baseline created by 'slopwatch init' on 2026-01-11 16:03:39 UTC",
   "entries": [
     {
       "hash": "44fac096fcddc658",
       "ruleId": "SW005",
       "filePath": "tests/Slopwatch.Tests.Fixtures/Slopwatch.Tests.Fixtures.csproj",
       "lineNumber": 15,
-      "codeSnippet": "\u003CNoWarn\u003E$(NoWarn);xUnit1013;xUnit1030;xUnit1031\u003C/NoWarn\u003E",
+      "codeSnippet": "<NoWarn>$(NoWarn);xUnit1013;xUnit1030;xUnit1031</NoWarn>",
       "message": "Adding warnings to NoWarn: xUnit1013;xUnit1030;xUnit1031",
       "baselinedAt": "2026-01-11T16:03:39.2281131+00:00"
     },
@@ -18,7 +18,7 @@
       "ruleId": "SW005",
       "filePath": "tests/Slopwatch.Tests.Fixtures/Slopwatch.Tests.Fixtures.csproj",
       "lineNumber": 17,
-      "codeSnippet": "\u003CNoWarn\u003E$(NoWarn);CS0169;CS8618\u003C/NoWarn\u003E",
+      "codeSnippet": "<NoWarn>$(NoWarn);CS0169;CS8618</NoWarn>",
       "message": "Adding warnings to NoWarn: CS0169;CS8618",
       "baselinedAt": "2026-01-11T16:03:39.2282534+00:00"
     },
@@ -27,7 +27,7 @@
       "ruleId": "SW005",
       "filePath": "tests/Slopwatch.Tests.Fixtures/Slopwatch.Tests.Fixtures.csproj",
       "lineNumber": 13,
-      "codeSnippet": "\u003CTreatWarningsAsErrors\u003Efalse\u003C/TreatWarningsAsErrors\u003E",
+      "codeSnippet": "<TreatWarningsAsErrors>false</TreatWarningsAsErrors>",
       "message": "TreatWarningsAsErrors is disabled - warnings will not fail the build",
       "baselinedAt": "2026-01-11T16:03:39.228261+00:00"
     },
@@ -45,7 +45,7 @@
       "ruleId": "SW003",
       "filePath": "src/Slopwatch/Detection/Rules/WarningSuppressRule.cs",
       "lineNumber": 291,
-      "codeSnippet": "catch\n            {\n                // If we can\u0027t access the directory, continue up\n            }",
+      "codeSnippet": "catch\n            {\n                // If we can't access the directory, continue up\n            }",
       "message": "Empty catch block swallows exceptions without handling",
       "baselinedAt": "2026-01-11T16:03:39.2282846+00:00"
     },
@@ -54,7 +54,7 @@
       "ruleId": "SW003",
       "filePath": "src/Slopwatch/Detection/Rules/EmptyCatchBlockRule.cs",
       "lineNumber": 268,
-      "codeSnippet": "catch\n            {\n                // If we can\u0027t access the directory, continue up\n            }",
+      "codeSnippet": "catch\n            {\n                // If we can't access the directory, continue up\n            }",
       "message": "Empty catch block swallows exceptions without handling",
       "baselinedAt": "2026-01-11T16:03:39.2282935+00:00"
     },
@@ -63,7 +63,7 @@
       "ruleId": "SW003",
       "filePath": "src/Slopwatch/Detection/Rules/DisabledTestRule.cs",
       "lineNumber": 290,
-      "codeSnippet": "catch\n            {\n                // If we can\u0027t access the directory, continue up\n            }",
+      "codeSnippet": "catch\n            {\n                // If we can't access the directory, continue up\n            }",
       "message": "Empty catch block swallows exceptions without handling",
       "baselinedAt": "2026-01-11T16:03:39.2282987+00:00"
     },
@@ -72,7 +72,7 @@
       "ruleId": "SW003",
       "filePath": "src/Slopwatch/Detection/Rules/TimeoutJigglingRule.cs",
       "lineNumber": 278,
-      "codeSnippet": "catch\n            {\n                // If we can\u0027t access the directory, continue up\n            }",
+      "codeSnippet": "catch\n            {\n                // If we can't access the directory, continue up\n            }",
       "message": "Empty catch block swallows exceptions without handling",
       "baselinedAt": "2026-01-11T16:03:39.2283035+00:00"
     },
@@ -99,7 +99,7 @@
       "ruleId": "SW003",
       "filePath": "src/Slopwatch.Cmd/Program.cs",
       "lineNumber": 39,
-      "codeSnippet": "catch (Exception ex)\n        {\n            await Console.Error.WriteLineAsync($\u0022Unhandled error: {ex.Message}\u0022);\n            return 2;\n        }",
+      "codeSnippet": "catch (Exception ex)\n        {\n            await Console.Error.WriteLineAsync($\"Unhandled error: {ex.Message}\");\n            return 2;\n        }",
       "message": "Catch block uses overly broad exception type: Exception",
       "baselinedAt": "2026-01-11T16:03:39.2283215+00:00"
     },
@@ -108,7 +108,7 @@
       "ruleId": "SW003",
       "filePath": "src/Slopwatch.Cmd/Commands/AnalyzeCommand.cs",
       "lineNumber": 221,
-      "codeSnippet": "catch (Exception ex)\n        {\n            await Console.Error.WriteLineAsync($\u0022Error during analysis: {ex.Message}\u0022);\n            if (ex.InnerException is not null)\n            {\n    // ...",
+      "codeSnippet": "catch (Exception ex)\n        {\n            await Console.Error.WriteLineAsync($\"Error during analysis: {ex.Message}\");\n            if (ex.InnerException is not null)\n            {\n    // ...",
       "message": "Catch block uses overly broad exception type: Exception",
       "baselinedAt": "2026-01-11T16:03:39.2283274+00:00"
     },
@@ -117,7 +117,7 @@
       "ruleId": "SW003",
       "filePath": "src/Slopwatch.Cmd/Commands/ListRulesCommand.cs",
       "lineNumber": 54,
-      "codeSnippet": "catch (Exception ex)\n        {\n            Console.Error.WriteLine($\u0022Error listing rules: {ex.Message}\u0022);\n            return Task.FromResult(2);\n        }",
+      "codeSnippet": "catch (Exception ex)\n        {\n            Console.Error.WriteLine($\"Error listing rules: {ex.Message}\");\n            return Task.FromResult(2);\n        }",
       "message": "Catch block uses overly broad exception type: Exception",
       "baselinedAt": "2026-01-11T16:03:39.2283335+00:00"
     },
@@ -126,9 +126,18 @@
       "ruleId": "SW003",
       "filePath": "src/Slopwatch.Cmd/Commands/InitCommand.cs",
       "lineNumber": 149,
-      "codeSnippet": "catch (Exception ex)\n        {\n            await Console.Error.WriteLineAsync($\u0022Error during initialization: {ex.Message}\u0022);\n            return 2;\n        }",
+      "codeSnippet": "catch (Exception ex)\n        {\n            await Console.Error.WriteLineAsync($\"Error during initialization: {ex.Message}\");\n            return 2;\n        }",
       "message": "Catch block uses overly broad exception type: Exception",
       "baselinedAt": "2026-01-11T16:03:39.2283388+00:00"
+    },
+    {
+      "hash": "e45be01c2f7ebb97",
+      "ruleId": "SW003",
+      "filePath": "src/Slopwatch/Analysis/ProjectRootLocator.cs",
+      "lineNumber": 38,
+      "codeSnippet": "catch\r\n            {\r\n                // If we can't access the directory, continue up.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-04-13T20:06:27.353673+00:00"
     }
   ]
 }
