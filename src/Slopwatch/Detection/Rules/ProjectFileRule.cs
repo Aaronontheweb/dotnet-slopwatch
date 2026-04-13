@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
+using Slopwatch.Suppression;
 
 namespace Slopwatch.Detection.Rules;
 
@@ -74,26 +75,29 @@ public sealed class ProjectFileRule : IDetectionRule
             yield break;
         }
 
+        var projectRoot = GetProjectRoot(context.FilePath);
+        var suppressionChecker = await SuppressionChecker.CreateAsync(context, projectRoot, cancellationToken);
+
         // Check for NoWarn additions
-        await foreach (var result in AnalyzeNoWarn(context, document, suppressions, cancellationToken))
+        await foreach (var result in AnalyzeNoWarn(context, document, suppressions, suppressionChecker, cancellationToken))
         {
             yield return result;
         }
 
         // Check for TreatWarningsAsErrors disabled
-        await foreach (var result in AnalyzeTreatWarningsAsErrors(context, document, suppressions, cancellationToken))
+        await foreach (var result in AnalyzeTreatWarningsAsErrors(context, document, suppressions, suppressionChecker, cancellationToken))
         {
             yield return result;
         }
 
         // Check for Nullable disabled
-        await foreach (var result in AnalyzeNullable(context, document, suppressions, cancellationToken))
+        await foreach (var result in AnalyzeNullable(context, document, suppressions, suppressionChecker, cancellationToken))
         {
             yield return result;
         }
 
         // Check for WarningsAsErrors removal (empty or missing)
-        await foreach (var result in AnalyzeWarningsAsErrors(context, document, suppressions, cancellationToken))
+        await foreach (var result in AnalyzeWarningsAsErrors(context, document, suppressions, suppressionChecker, cancellationToken))
         {
             yield return result;
         }
@@ -130,7 +134,7 @@ public sealed class ProjectFileRule : IDetectionRule
     /// <summary>
     /// Checks if a specific line is suppressed.
     /// </summary>
-    private static bool IsSuppressed(List<(string RuleId, string Justification, int Line)> suppressions, string ruleId, int lineNumber)
+    private static bool IsXmlSuppressed(List<(string RuleId, string Justification, int Line)> suppressions, string ruleId, int lineNumber)
     {
         // Check if there's a suppression comment on the line immediately before
         return suppressions.Any(s =>
@@ -145,6 +149,7 @@ public sealed class ProjectFileRule : IDetectionRule
         DetectionContext context,
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
+        SuppressionChecker suppressionChecker,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var noWarnElements = document.Descendants()
@@ -163,7 +168,7 @@ public sealed class ProjectFileRule : IDetectionRule
                 continue;
 
             // Check if suppressed
-            if (IsSuppressed(suppressions, RuleId, lineNumber))
+            if (suppressionChecker.IsSuppressed(context, null, RuleId, lineNumber) || IsXmlSuppressed(suppressions, RuleId, lineNumber))
                 continue;
 
             var value = element.Value.Trim();
@@ -217,6 +222,7 @@ public sealed class ProjectFileRule : IDetectionRule
         DetectionContext context,
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
+        SuppressionChecker suppressionChecker,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var elements = document.Descendants()
@@ -235,7 +241,7 @@ public sealed class ProjectFileRule : IDetectionRule
                 continue;
 
             // Check if suppressed
-            if (IsSuppressed(suppressions, RuleId, lineNumber))
+            if (suppressionChecker.IsSuppressed(context, null, RuleId, lineNumber) || IsXmlSuppressed(suppressions, RuleId, lineNumber))
                 continue;
 
             var value = element.Value.Trim();
@@ -267,6 +273,7 @@ public sealed class ProjectFileRule : IDetectionRule
         DetectionContext context,
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
+        SuppressionChecker suppressionChecker,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var elements = document.Descendants()
@@ -285,7 +292,7 @@ public sealed class ProjectFileRule : IDetectionRule
                 continue;
 
             // Check if suppressed
-            if (IsSuppressed(suppressions, RuleId, lineNumber))
+            if (suppressionChecker.IsSuppressed(context, null, RuleId, lineNumber) || IsXmlSuppressed(suppressions, RuleId, lineNumber))
                 continue;
 
             var value = element.Value.Trim();
@@ -317,6 +324,7 @@ public sealed class ProjectFileRule : IDetectionRule
         DetectionContext context,
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
+        SuppressionChecker suppressionChecker,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var elements = document.Descendants()
@@ -335,7 +343,7 @@ public sealed class ProjectFileRule : IDetectionRule
                 continue;
 
             // Check if suppressed
-            if (IsSuppressed(suppressions, RuleId, lineNumber))
+            if (suppressionChecker.IsSuppressed(context, null, RuleId, lineNumber) || IsXmlSuppressed(suppressions, RuleId, lineNumber))
                 continue;
 
             var value = element.Value.Trim();
@@ -358,5 +366,35 @@ public sealed class ProjectFileRule : IDetectionRule
         }
 
         await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Gets the project root directory from a file path.
+    /// </summary>
+    private static string GetProjectRoot(string filePath)
+    {
+        var directory = Path.GetDirectoryName(filePath) ?? Directory.GetCurrentDirectory();
+        while (!string.IsNullOrEmpty(directory))
+        {
+            try
+            {
+                if (Directory.Exists(Path.Combine(directory, ".git")) ||
+                    Directory.Exists(Path.Combine(directory, ".slopwatch")) ||
+                    Directory.GetFiles(directory, "*.sln").Any() ||
+                    Directory.GetFiles(directory, "*.slnx").Any())
+                {
+                    return directory;
+                }
+            }
+            catch
+            {
+            }
+
+            var parent = Path.GetDirectoryName(directory);
+            if (parent == directory)
+                break;
+            directory = parent;
+        }
+        return Path.GetDirectoryName(filePath) ?? Directory.GetCurrentDirectory();
     }
 }
