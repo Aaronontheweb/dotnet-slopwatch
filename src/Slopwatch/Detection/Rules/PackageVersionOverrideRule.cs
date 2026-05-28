@@ -136,9 +136,10 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
     }
 
     /// <summary>
-    /// Checks if a specific line is suppressed.
+    /// Checks whether the specified rule is suppressed by an XML slopwatch-ignore comment
+    /// on the line immediately preceding the reported XML element.
     /// </summary>
-    private static bool IsSuppressed(List<(string RuleId, string Justification, int Line)> suppressions, string ruleId, int lineNumber)
+    private static bool IsSuppressedByXmlComment(List<(string RuleId, string Justification, int Line)> suppressions, string ruleId, int lineNumber)
     {
         // Check if there's a suppression comment on the line immediately before
         return suppressions.Any(s =>
@@ -256,7 +257,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
                 continue;
 
             // Check if suppressed
-            if (IsSuppressed(suppressions, RuleId, lineNumber))
+            if (IsSuppressedByXmlComment(suppressions, RuleId, lineNumber))
                 continue;
 
             var packageName = element.Attribute("Include")?.Value ??
@@ -318,7 +319,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
                 continue;
 
             // Check if suppressed
-            if (IsSuppressed(suppressions, RuleId, lineNumber))
+            if (IsSuppressedByXmlComment(suppressions, RuleId, lineNumber))
                 continue;
 
             var packageName = element.Attribute("Include")?.Value ??

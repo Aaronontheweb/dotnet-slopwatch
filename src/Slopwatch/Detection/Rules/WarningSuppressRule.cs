@@ -58,8 +58,7 @@ public sealed class WarningSuppressRule : IDetectionRule
         var root = await context.SyntaxTree.GetRootAsync(cancellationToken);
 
         // Create suppression checker
-        var projectRoot = GetProjectRoot(context.FilePath);
-        var suppressionChecker = await SuppressionChecker.CreateAsync(context, projectRoot, cancellationToken);
+        var suppressionChecker = await SuppressionChecker.CreateAsync(context, cancellationToken);
 
         // Check for #pragma warning disable directives
         await foreach (var result in AnalyzePragmaDirectives(context, root, suppressionChecker, cancellationToken))
@@ -117,7 +116,7 @@ public sealed class WarningSuppressRule : IDetectionRule
                         .OrderByDescending(kvp => kvp.Key)
                         .ToList();
 
-                    if (matchedDisables.Any())
+                    if (matchedDisables.Count > 0)
                     {
                         // Remove the matched disable
                         disableDirectives.Remove(matchedDisables.First().Key);
@@ -265,41 +264,4 @@ public sealed class WarningSuppressRule : IDetectionRule
         return null;
     }
 
-    /// <summary>
-    /// Gets the project root directory from a file path.
-    /// </summary>
-    private static string GetProjectRoot(string filePath)
-    {
-        var directory = Path.GetDirectoryName(filePath);
-        if (string.IsNullOrEmpty(directory))
-        {
-            return Directory.GetCurrentDirectory();
-        }
-
-        while (directory != null)
-        {
-            try
-            {
-                // Look for common project root indicators
-                if (Directory.Exists(Path.Combine(directory, ".git")) ||
-                    Directory.Exists(Path.Combine(directory, ".slopwatch")) ||
-                    Directory.GetFiles(directory, "*.sln").Any())
-                {
-                    return directory;
-                }
-            }
-            catch
-            {
-                // If we can't access the directory, continue up
-            }
-
-            var parent = Path.GetDirectoryName(directory);
-            if (parent == directory) // Reached root
-                break;
-            directory = parent;
-        }
-
-        // Fallback to the file's directory or current directory
-        return Path.GetDirectoryName(filePath) ?? Directory.GetCurrentDirectory();
-    }
 }

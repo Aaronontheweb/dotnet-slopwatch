@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
+using Slopwatch.Suppression;
 
 namespace Slopwatch.Detection.Rules;
 
@@ -74,26 +75,28 @@ public sealed class ProjectFileRule : IDetectionRule
             yield break;
         }
 
+        var suppressionChecker = await SuppressionChecker.CreateAsync(context, cancellationToken);
+
         // Check for NoWarn additions
-        await foreach (var result in AnalyzeNoWarn(context, document, suppressions, cancellationToken))
+        await foreach (var result in AnalyzeNoWarn(context, document, suppressions, suppressionChecker, cancellationToken))
         {
             yield return result;
         }
 
         // Check for TreatWarningsAsErrors disabled
-        await foreach (var result in AnalyzeTreatWarningsAsErrors(context, document, suppressions, cancellationToken))
+        await foreach (var result in AnalyzeTreatWarningsAsErrors(context, document, suppressions, suppressionChecker, cancellationToken))
         {
             yield return result;
         }
 
         // Check for Nullable disabled
-        await foreach (var result in AnalyzeNullable(context, document, suppressions, cancellationToken))
+        await foreach (var result in AnalyzeNullable(context, document, suppressions, suppressionChecker, cancellationToken))
         {
             yield return result;
         }
 
         // Check for WarningsAsErrors removal (empty or missing)
-        await foreach (var result in AnalyzeWarningsAsErrors(context, document, suppressions, cancellationToken))
+        await foreach (var result in AnalyzeWarningsAsErrors(context, document, suppressions, suppressionChecker, cancellationToken))
         {
             yield return result;
         }
@@ -128,9 +131,10 @@ public sealed class ProjectFileRule : IDetectionRule
     }
 
     /// <summary>
-    /// Checks if a specific line is suppressed.
+    /// Checks whether the specified rule is suppressed by an XML slopwatch-ignore comment
+    /// on the line immediately preceding the reported XML element.
     /// </summary>
-    private static bool IsSuppressed(List<(string RuleId, string Justification, int Line)> suppressions, string ruleId, int lineNumber)
+    private static bool IsSuppressedByXmlComment(List<(string RuleId, string Justification, int Line)> suppressions, string ruleId, int lineNumber)
     {
         // Check if there's a suppression comment on the line immediately before
         return suppressions.Any(s =>
@@ -145,6 +149,7 @@ public sealed class ProjectFileRule : IDetectionRule
         DetectionContext context,
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
+        SuppressionChecker suppressionChecker,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var noWarnElements = document.Descendants()
@@ -163,7 +168,7 @@ public sealed class ProjectFileRule : IDetectionRule
                 continue;
 
             // Check if suppressed
-            if (IsSuppressed(suppressions, RuleId, lineNumber))
+            if (suppressionChecker.IsSuppressed(context, null, RuleId, lineNumber) || IsSuppressedByXmlComment(suppressions, RuleId, lineNumber))
                 continue;
 
             var value = element.Value.Trim();
@@ -217,6 +222,7 @@ public sealed class ProjectFileRule : IDetectionRule
         DetectionContext context,
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
+        SuppressionChecker suppressionChecker,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var elements = document.Descendants()
@@ -235,7 +241,7 @@ public sealed class ProjectFileRule : IDetectionRule
                 continue;
 
             // Check if suppressed
-            if (IsSuppressed(suppressions, RuleId, lineNumber))
+            if (suppressionChecker.IsSuppressed(context, null, RuleId, lineNumber) || IsSuppressedByXmlComment(suppressions, RuleId, lineNumber))
                 continue;
 
             var value = element.Value.Trim();
@@ -267,6 +273,7 @@ public sealed class ProjectFileRule : IDetectionRule
         DetectionContext context,
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
+        SuppressionChecker suppressionChecker,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var elements = document.Descendants()
@@ -285,7 +292,7 @@ public sealed class ProjectFileRule : IDetectionRule
                 continue;
 
             // Check if suppressed
-            if (IsSuppressed(suppressions, RuleId, lineNumber))
+            if (suppressionChecker.IsSuppressed(context, null, RuleId, lineNumber) || IsSuppressedByXmlComment(suppressions, RuleId, lineNumber))
                 continue;
 
             var value = element.Value.Trim();
@@ -317,6 +324,7 @@ public sealed class ProjectFileRule : IDetectionRule
         DetectionContext context,
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
+        SuppressionChecker suppressionChecker,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var elements = document.Descendants()
@@ -335,7 +343,7 @@ public sealed class ProjectFileRule : IDetectionRule
                 continue;
 
             // Check if suppressed
-            if (IsSuppressed(suppressions, RuleId, lineNumber))
+            if (suppressionChecker.IsSuppressed(context, null, RuleId, lineNumber) || IsSuppressedByXmlComment(suppressions, RuleId, lineNumber))
                 continue;
 
             var value = element.Value.Trim();
@@ -359,4 +367,5 @@ public sealed class ProjectFileRule : IDetectionRule
 
         await Task.CompletedTask;
     }
+
 }

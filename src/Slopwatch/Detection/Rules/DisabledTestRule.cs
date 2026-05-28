@@ -64,8 +64,7 @@ public sealed class DisabledTestRule : IDetectionRule
             .GetSemanticModel(context.SyntaxTree);
 
         // Create suppression checker
-        var projectRoot = GetProjectRoot(context.FilePath);
-        var suppressionChecker = await SuppressionChecker.CreateAsync(context, projectRoot, cancellationToken);
+        var suppressionChecker = await SuppressionChecker.CreateAsync(context, cancellationToken);
 
         // Find all method declarations
         var methods = root.DescendantNodes()
@@ -262,44 +261,6 @@ public sealed class DisabledTestRule : IDetectionRule
         }
 
         return activeIf;
-    }
-
-    /// <summary>
-    /// Gets the project root directory from a file path.
-    /// </summary>
-    private static string GetProjectRoot(string filePath)
-    {
-        var directory = Path.GetDirectoryName(filePath);
-        if (string.IsNullOrEmpty(directory))
-        {
-            return Directory.GetCurrentDirectory();
-        }
-
-        while (directory != null)
-        {
-            try
-            {
-                // Look for common project root indicators
-                if (Directory.Exists(Path.Combine(directory, ".git")) ||
-                    Directory.Exists(Path.Combine(directory, ".slopwatch")) ||
-                    Directory.GetFiles(directory, "*.sln").Any())
-                {
-                    return directory;
-                }
-            }
-            catch
-            {
-                // If we can't access the directory, continue up
-            }
-
-            var parent = Path.GetDirectoryName(directory);
-            if (parent == directory) // Reached root
-                break;
-            directory = parent;
-        }
-
-        // Fallback to the file's directory or current directory
-        return Path.GetDirectoryName(filePath) ?? Directory.GetCurrentDirectory();
     }
 
     /// <summary>
