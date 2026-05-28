@@ -5,7 +5,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <VersionPrefix>0.4.0</VersionPrefix>
+    <VersionPrefix>0.4.1</VersionPrefix>
     <PackageReleaseNotes>**Bug Fixes:**
 * `--config` flag now properly loads custom suppression configurations during analysis - the option was previously documented but not wired into the analysis pipeline (PR #71)
 * Hook mode now falls back to full file analysis when `git status` is unavailable (e.g., outside a git repository), instead of silently returning no results (PR #71)

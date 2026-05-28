@@ -1,3 +1,14 @@
+#### 0.4.1 May 28th 2026 ####
+
+**Bug Fixes:**
+* SW005 suppression via config now works correctly - the `--config` flag is respected for project file suppressions, enabling baseline cleanup of intentional MSBuild settings (PR #80, fixes #61)
+* `ProjectRootLocator` now uses a shared implementation across all detection rules, eliminating inconsistent path resolution between rules (PR #80)
+* `.slnx` solution files are now fully supported — nearest solution detection includes `.slnx` alongside `.sln` for proper config file resolution in nested project layouts (PR #80)
+* Added XML `slopwatch-ignore` comment suppression support for project files (`.props`, `.targets`) — matches the existing suppression pattern for code files (PR #80)
+
+**Compatibility:**
+* SDK toolchain bumped to .NET 10.0.300 (PR #83)
+
 #### 0.4.0 March 2nd 2026 ####
 
 **Bug Fixes:**
