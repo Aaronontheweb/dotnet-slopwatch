@@ -8,7 +8,7 @@
     <XunitVersion>2.9.3</XunitVersion>
     <XunitRunnerVersion>3.1.5</XunitRunnerVersion>
     <TestSdkVersion>18.0.1</TestSdkVersion>
-    <CoverletVersion>6.0.4</CoverletVersion>
+    <CoverletVersion>10.0.1</CoverletVersion>
     <AkkaVersion>1.5.68</AkkaVersion>
     <RazorLanguageVersion>6.0.36</RazorLanguageVersion>
   </PropertyGroup>
