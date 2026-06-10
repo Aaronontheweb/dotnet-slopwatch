@@ -1,3 +1,12 @@
+#### 0.4.2 June 10th 2026 ####
+
+**Bug Fixes:**
+* `--update-baseline` now correctly adds new entries and removes stale ones — uses hash-based deduplication to keep your baseline in sync (PR #97)
+
+**Dependencies:**
+* Bumped Microsoft.CodeAnalysis.CSharp from 5.0.0 to 5.3.0 (PR #92)
+* Bumped Akka.Streams from 1.5.60 to 1.5.68 (PR #88)
+
 #### 0.4.1 May 28th 2026 ####
 
 **Bug Fixes:**
