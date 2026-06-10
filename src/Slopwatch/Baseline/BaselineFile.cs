@@ -212,6 +212,100 @@ public sealed class BaselineFile
             .ToDictionary(g => g.Key, g => g.Count());
     }
 
+    /// <summary>
+    /// Synchronizes the baseline with current detection results - removes stale entries
+    /// that no longer exist in the provided scan scope and adds any new detections.
+    /// </summary>
+    /// <param name="results">The current detection results</param>
+    /// <param name="rootDirectory">Root directory for computing relative paths</param>
+    /// <param name="scannedFiles">Optional list of files included in the current scan;
+    /// only entries for these files are considered for stale removal.</param>
+    /// <returns>Tuple of (removed, added, kept) counts</returns>
+    public (int removed, int added, int kept) SyncWithDetections(
+        IEnumerable<DetectionResult> results,
+        string rootDirectory,
+        IEnumerable<string>? scannedFiles = null)
+    {
+        // Build a set of all current hashes from the detection results
+        var currentHashes = new HashSet<string>();
+        foreach (var result in results)
+        {
+            var relativePath = GetRelativePath(result.FilePath, rootDirectory);
+            var codeSnippet = result.CodeSnippet ?? string.Empty;
+            var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
+            currentHashes.Add(hash);
+        }
+
+        HashSet<string>? scopedFilePaths = null;
+        if (scannedFiles is not null)
+        {
+            var normalizedScannedPaths = scannedFiles
+                .Select(path => GetRelativePath(path, rootDirectory))
+                .Select(path => path.Replace('\\', '/'))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (normalizedScannedPaths.Count > 0)
+            {
+                scopedFilePaths = normalizedScannedPaths;
+            }
+        }
+
+        var removed = 0;
+        var kept = 0;
+
+        // Remove entries whose hashes no longer appear in the current analysis
+        Entries.RemoveAll(e =>
+        {
+            if (scopedFilePaths is not null && !scopedFilePaths.Contains(e.FilePath))
+            {
+                return false;
+            }
+
+            if (!currentHashes.Contains(e.Hash))
+            {
+                removed++;
+                return true;
+            }
+
+            kept++;
+            return false;
+        });
+
+        // Rebuild hash lookup after removals
+        _hashLookup = Entries.Select(e => e.Hash).ToHashSet();
+
+        // Add new entries - those in current results but not in the (remaining) baseline
+        var added = 0;
+        foreach (var result in results)
+        {
+            var relativePath = GetRelativePath(result.FilePath, rootDirectory);
+            var codeSnippet = result.CodeSnippet ?? string.Empty;
+            var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
+
+            if (!HashLookup.Contains(hash))
+            {
+                var entry = new BaselineEntry
+                {
+                    Hash = hash,
+                    RuleId = result.RuleId,
+                    FilePath = relativePath,
+                    LineNumber = result.LineNumber,
+                    CodeSnippet = codeSnippet,
+                    Message = result.Message,
+                    BaselinedAt = DateTimeOffset.UtcNow
+                };
+
+                Entries.Add(entry);
+                HashLookup.Add(hash);
+                added++;
+            }
+        }
+
+        UpdatedAt = DateTimeOffset.UtcNow;
+
+        return (removed, added, kept);
+    }
+
     private static string GetRelativePath(string fullPath, string rootDirectory)
     {
         var root = Path.GetFullPath(rootDirectory);

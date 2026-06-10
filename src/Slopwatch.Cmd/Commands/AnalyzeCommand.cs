@@ -71,6 +71,7 @@ public sealed class AnalyzeCommand
     {
         var stopwatch = ShowStats ? Stopwatch.StartNew() : null;
         var filesAnalyzed = 0;
+        IReadOnlyCollection<string>? scannedFiles = null;
 
         try
         {
@@ -214,6 +215,7 @@ public sealed class AnalyzeCommand
                     }
 
                     filesAnalyzed = filesToAnalyze.Count;
+                    scannedFiles = filesToAnalyze;
                     results = analyzer.AnalyzeFilesAsync(filesToAnalyze, cancellationToken);
                 }
             }
@@ -234,6 +236,7 @@ public sealed class AnalyzeCommand
                 }
 
                 filesAnalyzed = filePaths.Count;
+                scannedFiles = filePaths;
                 results = analyzer.AnalyzeFilesAsync(filePaths, cancellationToken);
             }
 
@@ -252,6 +255,7 @@ public sealed class AnalyzeCommand
                 // Get the list of files to analyze
                 var fileList = analyzer.GetMatchingFiles(rootDirectory, patterns).ToList();
                 filesAnalyzed = fileList.Count;
+                scannedFiles = fileList;
 
                 // Use parallel analysis for better performance on large codebases
                 // Only parallelize if more than 50 files (unless explicitly disabled with --parallel 0)
@@ -278,7 +282,13 @@ public sealed class AnalyzeCommand
             // Handle --update-baseline mode
             if (UpdateBaseline && baseline is not null)
             {
-                return await UpdateBaselineAsync(activeResults, rootDirectory, baseline, resolvedBaselinePath, cancellationToken);
+                return await UpdateBaselineAsync(
+                    activeResults,
+                    rootDirectory,
+                    baseline,
+                    resolvedBaselinePath,
+                    scannedFiles,
+                    cancellationToken);
             }
 
             // Filter against baseline if specified
@@ -373,30 +383,32 @@ public sealed class AnalyzeCommand
         string rootDirectory,
         Baseline.BaselineFile baseline,
         string baselinePath,
+        IReadOnlyCollection<string>? scannedFiles,
         CancellationToken cancellationToken)
     {
-        var addedCount = 0;
-        var skippedCount = 0;
-
+        var allResults = new List<DetectionResult>();
         await foreach (var result in results.WithCancellation(cancellationToken))
         {
-            if (baseline.AddEntry(result, rootDirectory))
-            {
-                addedCount++;
-            }
-            else
-            {
-                skippedCount++;
-            }
+            allResults.Add(result);
         }
 
-        if (addedCount > 0)
+        var (removed, added, kept) = baseline.SyncWithDetections(
+            allResults,
+            rootDirectory,
+            scannedFiles);
+
+        if (removed > 0 || added > 0)
         {
             await baseline.SaveAsync(baselinePath, cancellationToken);
             await Console.Out.WriteLineAsync($"Updated baseline at: {baselinePath}");
-            await Console.Out.WriteLineAsync($"  Added: {addedCount} new entries");
-            await Console.Out.WriteLineAsync($"  Skipped: {skippedCount} already baselined");
+            await Console.Out.WriteLineAsync($"  Added: {added} new entries");
+            await Console.Out.WriteLineAsync($"  Removed: {removed} stale entries");
+            await Console.Out.WriteLineAsync($"  Kept: {kept} already baselined");
             await Console.Out.WriteLineAsync($"  Total: {baseline.Entries.Count} entries");
+        }
+        else if (kept > 0)
+        {
+            await Console.Out.WriteLineAsync("No changes needed - all detections already in baseline");
         }
         else
         {

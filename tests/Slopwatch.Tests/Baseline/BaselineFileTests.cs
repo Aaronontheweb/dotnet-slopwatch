@@ -284,6 +284,34 @@ public class BaselineFileTests
         Assert.Empty(baseline.Entries);
     }
 
+    [Fact]
+    public void SyncWithDetections_RemovesStaleOnlyForScannedFiles()
+    {
+        var baseline = new BaselineFile();
+        var staleScannedFile = CreateResult("SW001", "/root/src/A.cs", 10, "old-a");
+        var staleOutsideScopeFile = CreateResult("SW001", "/root/src/B.cs", 20, "keep-b");
+        baseline.AddEntry(staleScannedFile, "/root");
+        baseline.AddEntry(staleOutsideScopeFile, "/root");
+
+        var currentResults = new[]
+        {
+            CreateResult("SW001", "/root/src/A.cs", 10, "new-a")
+        };
+
+        var (removed, added, kept) = baseline.SyncWithDetections(
+            currentResults,
+            "/root",
+            new[] { "/root/src/A.cs" });
+
+        Assert.Equal(1, removed);
+        Assert.Equal(1, added);
+        Assert.Equal(0, kept);
+        Assert.Equal(2, baseline.Entries.Count);
+
+        Assert.Contains(baseline.Entries, e => e.FilePath == "src/A.cs" && e.RuleId == "SW001" && e.CodeSnippet == "new-a");
+        Assert.Contains(baseline.Entries, e => e.FilePath == "src/B.cs" && e.CodeSnippet == "keep-b");
+    }
+
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
     {
         foreach (var item in source)
