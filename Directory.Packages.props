@@ -9,7 +9,7 @@
     <XunitRunnerVersion>3.1.5</XunitRunnerVersion>
     <TestSdkVersion>18.8.0</TestSdkVersion>
     <CoverletVersion>10.0.1</CoverletVersion>
-    <AkkaVersion>1.5.69</AkkaVersion>
+    <AkkaVersion>1.5.70</AkkaVersion>
     <RazorLanguageVersion>6.0.36</RazorLanguageVersion>
   </PropertyGroup>
   <!-- App dependencies -->
