@@ -7,7 +7,7 @@
     <FileSystemGlobbingVersion>10.0.9</FileSystemGlobbingVersion>
     <XunitVersion>2.9.3</XunitVersion>
     <XunitRunnerVersion>3.1.5</XunitRunnerVersion>
-    <TestSdkVersion>18.7.0</TestSdkVersion>
+    <TestSdkVersion>18.8.0</TestSdkVersion>
     <CoverletVersion>10.0.1</CoverletVersion>
     <AkkaVersion>1.5.69</AkkaVersion>
     <RazorLanguageVersion>6.0.36</RazorLanguageVersion>
