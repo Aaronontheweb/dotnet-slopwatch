@@ -2,7 +2,7 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!-- Nuget package versions -->
-    <RoslynVersion>5.3.0</RoslynVersion>
+    <RoslynVersion>5.6.0</RoslynVersion>
     <CommandLineParserVersion>2.9.1</CommandLineParserVersion>
     <FileSystemGlobbingVersion>10.0.9</FileSystemGlobbingVersion>
     <XunitVersion>2.9.3</XunitVersion>
