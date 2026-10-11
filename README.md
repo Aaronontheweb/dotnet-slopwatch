@@ -12,6 +12,7 @@
 <p align="center">
   <a href="https://www.nuget.org/packages/Slopwatch.Cmd"><img src="https://img.shields.io/nuget/v/Slopwatch.Cmd.svg" alt="NuGet"></a>
   <a href="https://github.com/Aaronontheweb/dotnet-slopwatch/blob/dev/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
+  <a href="https://discord.gg/2smteJ8sGh"><img src="https://img.shields.io/discord/1494176300657545318?label=Discord&logo=discord&color=5865F2" alt="Discord"></a>
 </p>
 
 ---
