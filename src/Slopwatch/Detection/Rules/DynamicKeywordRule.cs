@@ -155,15 +155,17 @@ public sealed class DynamicKeywordRule : IDetectionRule
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is deliberately a <em>deny-list of non-type roles</em> rather than an allow-list of
-    /// type positions. An identifier named <c>dynamic</c> is assumed to be the keyword unless it
-    /// is provably something else (a member name, a label, a named argument, and so on). That
-    /// way an unanticipated syntax form is flagged rather than silently skipped.
+    /// Roslyn already answers this question: <see cref="SyntaxFacts.IsInNamespaceOrTypeContext"/>
+    /// reports whether an expression appears in a namespace-or-type context. Using it instead of
+    /// a hand-maintained switch means the rule inherits Roslyn's own knowledge of the grammar,
+    /// so new C# syntax forms are handled without adding cases.
     /// </para>
     /// <para>
-    /// The previous allow-list approach required a new switch arm for every type position and
-    /// was found to miss explicit lambda return types, LINQ <c>from</c>/<c>join</c> clause
-    /// types, and <c>__refvalue</c>.
+    /// A hand-written allow-list of parent node kinds was tried first and was provably
+    /// incomplete: it missed explicit lambda return types, LINQ <c>from</c>/<c>join</c> clause
+    /// types, and <c>__refvalue</c>. A deny-list was tried second and required enumerating every
+    /// non-type role instead. Both were whack-a-mole. <c>SyntaxFacts</c> is the grammar's own
+    /// answer.
     /// </para>
     /// </remarks>
     private static bool IsTypePosition(IdentifierNameSyntax identifier)
@@ -173,53 +175,7 @@ public sealed class DynamicKeywordRule : IDetectionRule
         if (IsInExcludedContext(identifier))
             return false;
 
-        return identifier.Parent switch
-        {
-            // --- Provably NOT a type position ---
-
-            // `dynamic.ToString()`, `this.dynamic`, `E.dynamic` — the identifier is a value
-            // receiver or a member name, never a type. `dynamic` has no static members, so a
-            // member-access receiver can never be the dynamic type.
-            MemberAccessExpressionSyntax => false,
-
-            // `M(dynamic: 1)` — named argument.
-            NameColonSyntax => false,
-
-            // `dynamic:` — statement label.
-            LabeledStatementSyntax => false,
-
-            // `goto dynamic;`
-            GotoStatementSyntax => false,
-
-            // Declaration names: `int dynamic;`, `void dynamic()`, `class dynamic { }`.
-            VariableDeclaratorSyntax => false,
-            MethodDeclarationSyntax m => m.Identifier.ValueText != "dynamic",
-            PropertyDeclarationSyntax p => p.Identifier.ValueText != "dynamic",
-            EventDeclarationSyntax e => e.Identifier.ValueText != "dynamic",
-            BaseTypeDeclarationSyntax t => t.Identifier.ValueText != "dynamic",
-            DelegateDeclarationSyntax d => d.Identifier.ValueText != "dynamic",
-            EnumMemberDeclarationSyntax => false,
-            TypeParameterSyntax => false,
-            ParameterSyntax p => p.Identifier.ValueText != "dynamic",
-            LocalFunctionStatementSyntax l => l.Identifier.ValueText != "dynamic",
-            ConstructorDeclarationSyntax c => c.Identifier.ValueText != "dynamic",
-            DestructorDeclarationSyntax d => d.Identifier.ValueText != "dynamic",
-            IndexerDeclarationSyntax i => i.Type == identifier,
-            OperatorDeclarationSyntax o => o.ReturnType == identifier,
-            ConversionOperatorDeclarationSyntax c => c.Type == identifier,
-            AccessorDeclarationSyntax => false,
-
-            // Attribute names: `[dynamic]`.
-            AttributeSyntax a => a.Name != identifier,
-
-            // `using dynamic = ...;` — the alias name, not the target type.
-            UsingDirectiveSyntax u => u.Alias?.Name != identifier,
-
-            // `nameof` / `typeof` handled by IsInExcludedContext or are genuine type slots.
-
-            // --- Everything else is treated as a type position ---
-            _ => true
-        };
+        return SyntaxFacts.IsInNamespaceOrTypeContext(identifier);
     }
 
     /// <summary>
