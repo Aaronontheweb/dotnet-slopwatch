@@ -11,42 +11,50 @@ namespace Slopwatch.Detection.Rules;
 /// Rule ID: SW021
 /// </summary>
 /// <remarks>
-/// This rule flags every syntactic use of <c>dynamic</c> as a type:
-/// <list type="bullet">
-/// <item><description>Parameters, return types, fields, properties, indexers, locals</description></item>
-/// <item><description>Generic type arguments and generic constraints (<c>where T : dynamic</c>)</description></item>
-/// <item><description>Casts, <c>as dynamic</c>, <c>is dynamic</c>, and type patterns</description></item>
-/// <item><description><c>using</c> aliases (<c>using D = dynamic;</c>)</description></item>
-/// <item><description>Array element types, tuples, function pointers, base types</description></item>
-/// </list>
-///
-/// <c>dynamic</c> is a hard ban because it:
-/// <list type="bullet">
-/// <item><description>Bypasses compile-time type checking entirely</description></item>
-/// <item><description>Defeats static analysis, refactoring, and IDE tooling</description></item>
-/// <item><description>Breaks trimming, AOT compilation, and source generators</description></item>
-/// <item><description>Is a common LLM escape hatch for silencing type errors instead of fixing them</description></item>
-/// </list>
-///
+/// <para>
+/// <c>dynamic</c> is a contextual keyword: it has no <c>SyntaxKind</c> of its own and parses
+/// as a plain <see cref="IdentifierNameSyntax"/>. Detection therefore has to decide, for each
+/// identifier named <c>dynamic</c>, whether it occupies a type position.
+/// </para>
+/// <para>
+/// <strong>This rule fails closed.</strong> Rather than enumerating the type positions that
+/// should be flagged (a whitelist that is provably incomplete — it missed lambda return types,
+/// LINQ query clauses, and <c>__refvalue</c>), it flags every identifier named <c>dynamic</c>
+/// and then excludes only the roles where the identifier is provably <em>not</em> a type.
+/// A new C# syntax form that nobody anticipated is flagged by default rather than silently
+/// allowed through.
+/// </para>
+/// <para>
+/// A semantic model would be the ideal way to resolve this, but slopwatch analyzes each file
+/// in isolation (<see cref="Analysis.FileAnalyzer"/> parses a single <c>SyntaxTree</c> with no
+/// compilation or project references). Building a per-file compilation produces a <em>worse</em>
+/// result: a user-defined <c>class dynamic</c> declared in a file outside the compilation
+/// resolves to <c>TypeKind.Dynamic</c>, introducing a false positive the syntactic approach
+/// does not have. So the rule stays syntactic and fails closed.
+/// </para>
+/// <para>
 /// <strong>Deliberate exclusions:</strong>
+/// </para>
 /// <list type="bullet">
 /// <item><description>
-/// <c>nameof(dynamic)</c> and attribute-argument positions are not flagged — they produce a
-/// string, not a dynamic-typed slot, so they have no runtime effect.
+/// <c>nameof(dynamic)</c> and attribute arguments produce a string or metadata rather than a
+/// dynamic-typed slot, so they have no runtime effect.
 /// </description></item>
 /// <item><description>
-/// A user-defined type literally named <c>dynamic</c> (<c>class dynamic { }</c>) is flagged.
-/// This is an accepted false positive: the rule is purely syntactic and has no semantic model.
+/// A user-defined type literally named <c>dynamic</c> is flagged. This is an accepted false
+/// positive: without a semantic model the rule cannot distinguish it, and banning the name is
+/// consistent with the rule's intent.
 /// </description></item>
 /// <item><description>
 /// <c>System.Dynamic</c> and <c>ExpandoObject</c> are not flagged. The ban is keyword-shaped,
 /// not behavior-shaped.
 /// </description></item>
 /// </list>
-///
+/// <para>
 /// This rule can be suppressed with <see cref="SlopwatchSuppressAttribute"/> for the rare
 /// legitimate case (COM interop, dynamic proxy boundaries). Suppression applies to the nearest
 /// enclosing declaration, so a class-level attribute does not cover its members.
+/// </para>
 /// </remarks>
 public sealed class DynamicKeywordRule : IDetectionRule
 {
@@ -81,28 +89,24 @@ public sealed class DynamicKeywordRule : IDetectionRule
         // Create suppression checker
         var suppressionChecker = await SuppressionChecker.CreateAsync(context, cancellationToken);
 
-        // Group occurrences by their enclosing snippet node so we can disambiguate
-        // multiple `dynamic` tokens that share the same enclosing declaration.
+        // Collect candidates first so ordinals can be assigned before any line filtering.
+        // Ordinals must be stable across full-file and diff-scoped analysis, otherwise the
+        // same token gets a different baseline hash depending on which mode produced it.
         var occurrences = new List<(IdentifierNameSyntax Node, SyntaxNode Scope)>();
 
-        foreach (var node in root.DescendantNodes())
+        foreach (var identifier in root.DescendantNodes().OfType<IdentifierNameSyntax>())
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (node is not IdentifierNameSyntax identifier || !IsDynamicTypeReference(identifier))
+            if (identifier.Identifier.ValueText != "dynamic")
                 continue;
 
-            // Deliberate exclusions: nameof(...) and attribute arguments produce a
-            // string or metadata, not a dynamic-typed slot.
-            if (IsInExcludedContext(identifier))
+            if (!IsTypePosition(identifier))
                 continue;
 
             occurrences.Add((identifier, FindSnippetScope(identifier)));
         }
 
-        // Assign ordinals BEFORE any line filtering. Ordinals must be stable across
-        // full-file and diff-scoped analysis, otherwise the same token gets a different
-        // baseline hash depending on which mode produced it.
         var scopeCounts = occurrences
             .GroupBy(o => o.Scope)
             .ToDictionary(g => g.Key, g => g.Count());
@@ -147,67 +151,74 @@ public sealed class DynamicKeywordRule : IDetectionRule
     }
 
     /// <summary>
-    /// Determines whether a node is the <c>dynamic</c> keyword used in a type position.
+    /// Determines whether an identifier named <c>dynamic</c> occupies a type position.
     /// </summary>
     /// <remarks>
-    /// <c>dynamic</c> is a contextual keyword, so it parses as an <see cref="IdentifierNameSyntax"/>.
-    /// We only flag it when it occupies a type slot, which avoids false positives on
-    /// identifiers that happen to be named <c>dynamic</c> (e.g. <c>dynamic.ToString()</c>).
+    /// <para>
+    /// This is deliberately a <em>deny-list of non-type roles</em> rather than an allow-list of
+    /// type positions. An identifier named <c>dynamic</c> is assumed to be the keyword unless it
+    /// is provably something else (a member name, a label, a named argument, and so on). That
+    /// way an unanticipated syntax form is flagged rather than silently skipped.
+    /// </para>
+    /// <para>
+    /// The previous allow-list approach required a new switch arm for every type position and
+    /// was found to miss explicit lambda return types, LINQ <c>from</c>/<c>join</c> clause
+    /// types, and <c>__refvalue</c>.
+    /// </para>
     /// </remarks>
-    private static bool IsDynamicTypeReference(SyntaxNode node)
+    private static bool IsTypePosition(IdentifierNameSyntax identifier)
     {
-        if (node is not IdentifierNameSyntax identifier || identifier.Identifier.ValueText != "dynamic")
+        // Deliberate exclusions: nameof(...) and attribute arguments produce a string or
+        // metadata, not a dynamic-typed slot.
+        if (IsInExcludedContext(identifier))
             return false;
 
         return identifier.Parent switch
         {
-            // Declarations and signatures
-            VariableDeclarationSyntax v => v.Type == identifier,
-            ParameterSyntax p => p.Type == identifier,
-            PropertyDeclarationSyntax p => p.Type == identifier,
+            // --- Provably NOT a type position ---
+
+            // `dynamic.ToString()`, `this.dynamic`, `E.dynamic` — the identifier is a value
+            // receiver or a member name, never a type. `dynamic` has no static members, so a
+            // member-access receiver can never be the dynamic type.
+            MemberAccessExpressionSyntax => false,
+
+            // `M(dynamic: 1)` — named argument.
+            NameColonSyntax => false,
+
+            // `dynamic:` — statement label.
+            LabeledStatementSyntax => false,
+
+            // `goto dynamic;`
+            GotoStatementSyntax => false,
+
+            // Declaration names: `int dynamic;`, `void dynamic()`, `class dynamic { }`.
+            VariableDeclaratorSyntax => false,
+            MethodDeclarationSyntax m => m.Identifier.ValueText != "dynamic",
+            PropertyDeclarationSyntax p => p.Identifier.ValueText != "dynamic",
+            EventDeclarationSyntax e => e.Identifier.ValueText != "dynamic",
+            BaseTypeDeclarationSyntax t => t.Identifier.ValueText != "dynamic",
+            DelegateDeclarationSyntax d => d.Identifier.ValueText != "dynamic",
+            EnumMemberDeclarationSyntax => false,
+            TypeParameterSyntax => false,
+            ParameterSyntax p => p.Identifier.ValueText != "dynamic",
+            LocalFunctionStatementSyntax l => l.Identifier.ValueText != "dynamic",
+            ConstructorDeclarationSyntax c => c.Identifier.ValueText != "dynamic",
+            DestructorDeclarationSyntax d => d.Identifier.ValueText != "dynamic",
             IndexerDeclarationSyntax i => i.Type == identifier,
-            MethodDeclarationSyntax m => m.ReturnType == identifier,
-            LocalFunctionStatementSyntax l => l.ReturnType == identifier,
-            DelegateDeclarationSyntax d => d.ReturnType == identifier,
             OperatorDeclarationSyntax o => o.ReturnType == identifier,
             ConversionOperatorDeclarationSyntax c => c.Type == identifier,
-            EventDeclarationSyntax e => e.Type == identifier,
-            EventFieldDeclarationSyntax e => e.Declaration.Type == identifier,
-            ForEachStatementSyntax f => f.Type == identifier,
-            CatchDeclarationSyntax c => c.Type == identifier,
-            DeclarationExpressionSyntax d => d.Type == identifier,
-            TupleElementSyntax t => t.Type == identifier,
-            SimpleBaseTypeSyntax s => s.Type == identifier,
-            PrimaryConstructorBaseTypeSyntax p => p.Type == identifier,
+            AccessorDeclarationSyntax => false,
 
-            // Generic positions
-            TypeArgumentListSyntax t => t.Arguments.Contains(identifier),
-            TypeConstraintSyntax t => t.Type == identifier,
+            // Attribute names: `[dynamic]`.
+            AttributeSyntax a => a.Name != identifier,
 
-            // Conversions and patterns
-            CastExpressionSyntax c => c.Type == identifier,
-            ObjectCreationExpressionSyntax o => o.Type == identifier,
-            TypeOfExpressionSyntax t => t.Type == identifier,
-            DefaultExpressionSyntax d => d.Type == identifier,
-            DeclarationPatternSyntax d => d.Type == identifier,
-            RecursivePatternSyntax r => r.Type == identifier,
-            BinaryExpressionSyntax b => (b.IsKind(SyntaxKind.AsExpression) || b.IsKind(SyntaxKind.IsExpression))
-                                        && b.Right == identifier,
+            // `using dynamic = ...;` — the alias name, not the target type.
+            UsingDirectiveSyntax u => u.Alias?.Name != identifier,
 
-            // Composite type forms
-            ArrayTypeSyntax a => a.ElementType == identifier,
-            NullableTypeSyntax n => n.ElementType == identifier,
-            RefTypeSyntax r => r.Type == identifier,
-            PointerTypeSyntax p => p.ElementType == identifier,
-            FunctionPointerParameterSyntax f => f.Type == identifier,
+            // `nameof` / `typeof` handled by IsInExcludedContext or are genuine type slots.
 
-            // Explicit lambda return type: `dynamic () => null`
-            ParenthesizedLambdaExpressionSyntax l => l.ReturnType == identifier,
-
-            // using aliases: `using D = dynamic;` and `using static dynamic;`
-            UsingDirectiveSyntax u => u.Alias?.Name == identifier || u.Name == identifier,
-
-            _ => false
+            // --- Everything else is treated as a type position ---
+            _ => true
         };
     }
 
