@@ -289,7 +289,7 @@ public class TestClass
         const string code = @"
 public class TestClass
 {
-    [SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"")]
+    [SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"", ""Interop"")]
     public void Run(dynamic comObject)
     {
     }
@@ -587,7 +587,7 @@ public class TestClass
         const string code = @"
 public class TestClass
 {
-    [SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"")]
+    [SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"", ""Interop"")]
     public TestClass(dynamic comObject)
     {
     }
@@ -608,7 +608,7 @@ public class TestClass
         const string code = @"
 public class TestClass
 {
-    [SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"")]
+    [SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"", ""Interop"")]
     public static implicit operator dynamic(TestClass value) => null!;
 }";
         var context = CreateTestContext(code);
@@ -625,7 +625,7 @@ public class TestClass
     {
         // Arrange
         const string code = @"
-[SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"")]
+[SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"", ""Interop"")]
 public delegate dynamic Handler(dynamic input);
 ";
         var context = CreateTestContext(code);
@@ -644,7 +644,7 @@ public delegate dynamic Handler(dynamic input);
         const string code = @"
 public class TestClass
 {
-    [SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"")]
+    [SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"", ""Interop"")]
     public dynamic this[int index] => null!;
 }";
         var context = CreateTestContext(code);
@@ -677,6 +677,99 @@ public class TestClass
         var result = Assert.Single(results);
         Assert.Equal("SW021", result.RuleId);
         Assert.Equal(6, result.LineNumber);
+    }
+
+    [Fact]
+    public void Test_DoesNotFlagNameofDynamic()
+    {
+        // Arrange - nameof produces a string, not a dynamic-typed slot
+        const string code = @"
+public class TestClass
+{
+    public string Run()
+    {
+        return nameof(dynamic);
+    }
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Test_DoesNotFlagDynamicInAttributeArgument()
+    {
+        // Arrange - attribute arguments are metadata, not runtime type slots
+        const string code = @"
+public class TestClass
+{
+    [System.Obsolete(nameof(dynamic))]
+    public void Run()
+    {
+    }
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Test_IdenticalStatementsInDifferentMethodsHaveDistinctSnippets()
+    {
+        // Arrange - same statement text in two methods must not share a baseline hash
+        const string code = @"
+public class TestClass
+{
+    public void A()
+    {
+        dynamic x = 1;
+    }
+
+    public void B()
+    {
+        dynamic x = 1;
+    }
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Equal(2, results.Count);
+        Assert.NotEqual(results[0].CodeSnippet, results[1].CodeSnippet);
+    }
+
+    [Fact]
+    public void Test_OrdinalsAreStableUnderLineScope()
+    {
+        // Arrange - ordinals must not shift when only one line is in scope
+        const string code = @"
+public class TestClass
+{
+    public dynamic Convert(
+        dynamic input) => input;
+}";
+        var fullContext = CreateTestContext(code);
+        var scopedContext = CreateTestContextWithLineScope(code, addedLines: new[] { 5 });
+
+        // Act
+        var fullResults = RunRule(fullContext);
+        var scopedResults = RunRule(scopedContext);
+
+        // Assert - the parameter is occurrence 2 of 2 in both modes
+        var fullParam = fullResults.Single(r => r.LineNumber == 5);
+        var scopedParam = Assert.Single(scopedResults);
+        Assert.Equal(fullParam.CodeSnippet, scopedParam.CodeSnippet);
+        Assert.Contains("occurrence 2 of 2", scopedParam.CodeSnippet);
     }
 
     #region Helper Methods

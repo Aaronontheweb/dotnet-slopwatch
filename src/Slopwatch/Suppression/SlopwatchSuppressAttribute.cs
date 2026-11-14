@@ -45,8 +45,14 @@ namespace Slopwatch.Suppression;
 [AttributeUsage(
     AttributeTargets.Method |
     AttributeTargets.Class |
+    AttributeTargets.Struct |
+    AttributeTargets.Interface |
     AttributeTargets.Property |
-    AttributeTargets.Field,
+    AttributeTargets.Field |
+    AttributeTargets.Constructor |
+    AttributeTargets.Delegate |
+    AttributeTargets.Event |
+    AttributeTargets.Enum,
     AllowMultiple = true,
     Inherited = false)]
 public sealed class SlopwatchSuppressAttribute : Attribute

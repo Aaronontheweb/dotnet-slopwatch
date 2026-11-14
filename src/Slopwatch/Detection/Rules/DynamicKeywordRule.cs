@@ -92,14 +92,29 @@ public sealed class DynamicKeywordRule : IDetectionRule
             if (node is not IdentifierNameSyntax identifier || !IsDynamicTypeReference(identifier))
                 continue;
 
+            // Deliberate exclusions: nameof(...) and attribute arguments produce a
+            // string or metadata, not a dynamic-typed slot.
+            if (IsInExcludedContext(identifier))
+                continue;
+
             occurrences.Add((identifier, FindSnippetScope(identifier)));
         }
 
+        // Assign ordinals BEFORE any line filtering. Ordinals must be stable across
+        // full-file and diff-scoped analysis, otherwise the same token gets a different
+        // baseline hash depending on which mode produced it.
         var scopeCounts = occurrences
             .GroupBy(o => o.Scope)
             .ToDictionary(g => g.Key, g => g.Count());
 
         var scopeSeen = new Dictionary<SyntaxNode, int>();
+        var ordinals = new Dictionary<IdentifierNameSyntax, int>();
+        foreach (var (node, scope) in occurrences)
+        {
+            scopeSeen.TryGetValue(scope, out var seen);
+            scopeSeen[scope] = ++seen;
+            ordinals[node] = seen;
+        }
 
         foreach (var (node, scope) in occurrences)
         {
@@ -117,9 +132,6 @@ public sealed class DynamicKeywordRule : IDetectionRule
             if (suppressionChecker.IsSuppressed(context, suppressionTarget, RuleId, lineNumber))
                 continue;
 
-            scopeSeen.TryGetValue(scope, out var seen);
-            scopeSeen[scope] = ++seen;
-
             yield return new DetectionResult(
                 RuleId,
                 Name,
@@ -128,8 +140,8 @@ public sealed class DynamicKeywordRule : IDetectionRule
                 lineNumber,
                 location.StartLinePosition.Character + 1,
                 "Use of 'dynamic' bypasses compile-time type checking",
-                BuildSnippet(scope, seen, scopeCounts[scope]),
-                "Replace 'dynamic' with a concrete type, a generic type parameter, or an interface. If dynamic is genuinely required (COM interop, dynamic proxy boundary), use [SlopwatchSuppress(\"SW021\", \"reason with 20+ chars\")]"
+                BuildSnippet(scope, ordinals[node], scopeCounts[scope]),
+                "Replace 'dynamic' with a concrete type, a generic type parameter, or an interface. If dynamic is genuinely required (COM interop, dynamic proxy boundary), use [SlopwatchSuppress(\"SW021\", \"reason with 20+ chars\", \"Interop\")]"
             );
         }
     }
@@ -200,6 +212,36 @@ public sealed class DynamicKeywordRule : IDetectionRule
     }
 
     /// <summary>
+    /// Determines whether a node sits inside a context excluded from the ban.
+    /// </summary>
+    /// <remarks>
+    /// <c>nameof(dynamic)</c> and attribute arguments produce a string or metadata rather
+    /// than a dynamic-typed slot, so they have no runtime effect and are not flagged.
+    /// </remarks>
+    private static bool IsInExcludedContext(SyntaxNode node)
+    {
+        for (var current = node.Parent; current is not null; current = current.Parent)
+        {
+            switch (current)
+            {
+                case InvocationExpressionSyntax invocation
+                    when invocation.Expression is IdentifierNameSyntax { Identifier.ValueText: "nameof" }:
+                    return true;
+
+                case AttributeSyntax:
+                    return true;
+
+                // Stop at the enclosing declaration; exclusions are local to the expression.
+                case StatementSyntax:
+                case MemberDeclarationSyntax:
+                    return false;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Finds the node whose text is used as the reported snippet and baseline hash input.
     /// </summary>
     /// <remarks>
@@ -221,14 +263,65 @@ public sealed class DynamicKeywordRule : IDetectionRule
     }
 
     /// <summary>
-    /// Builds the snippet text, disambiguating multiple occurrences within one scope.
+    /// Builds the snippet text, disambiguating occurrences that would otherwise collide.
     /// </summary>
+    /// <remarks>
+    /// Two identical statements in different methods (<c>void A() { dynamic x = 1; }</c> and
+    /// <c>void B() { dynamic x = 1; }</c>) produce identical statement text. Without a
+    /// qualifier they hash the same, so baselining one would exempt the other. The enclosing
+    /// member's name is prepended to keep those distinct.
+    /// </remarks>
     private static string BuildSnippet(SyntaxNode scope, int occurrence, int total)
     {
         var text = scope.ToString();
+        var qualifier = FindEnclosingMemberName(scope);
+
+        var qualified = qualifier is null ? text : $"{qualifier}: {text}";
+
         return total <= 1
-            ? text
-            : $"{text}\n// dynamic occurrence {occurrence} of {total}";
+            ? qualified
+            : $"{qualified}\n// dynamic occurrence {occurrence} of {total}";
+    }
+
+    /// <summary>
+    /// Gets a stable name for the member enclosing a scope, used to disambiguate snippets.
+    /// </summary>
+    private static string? FindEnclosingMemberName(SyntaxNode scope)
+    {
+        for (var current = scope; current is not null; current = current.Parent)
+        {
+            switch (current)
+            {
+                case MethodDeclarationSyntax m:
+                    return m.Identifier.ValueText;
+                case ConstructorDeclarationSyntax c:
+                    return c.Identifier.ValueText;
+                case DestructorDeclarationSyntax d:
+                    return "~" + d.Identifier.ValueText;
+                case PropertyDeclarationSyntax p:
+                    return p.Identifier.ValueText;
+                case IndexerDeclarationSyntax:
+                    return "this[]";
+                case EventDeclarationSyntax e:
+                    return e.Identifier.ValueText;
+                case EventFieldDeclarationSyntax ef:
+                    return string.Join(",", ef.Declaration.Variables.Select(v => v.Identifier.ValueText));
+                case FieldDeclarationSyntax f:
+                    return string.Join(",", f.Declaration.Variables.Select(v => v.Identifier.ValueText));
+                case OperatorDeclarationSyntax o:
+                    return "operator " + o.OperatorToken.ValueText;
+                case ConversionOperatorDeclarationSyntax co:
+                    return "operator " + co.Type.ToString();
+                case LocalFunctionStatementSyntax lf:
+                    return lf.Identifier.ValueText;
+                case BaseTypeDeclarationSyntax t:
+                    return t.Identifier.ValueText;
+                case DelegateDeclarationSyntax dd:
+                    return dd.Identifier.ValueText;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
