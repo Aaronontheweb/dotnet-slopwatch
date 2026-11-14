@@ -107,6 +107,15 @@ public sealed class DynamicKeywordRule : IDetectionRule
             occurrences.Add((identifier, FindSnippetScope(identifier)));
         }
 
+        // Cache each scope's text once. Calling ToString() per occurrence is quadratic when
+        // many occurrences share a scope.
+        var scopeText = new Dictionary<SyntaxNode, string>();
+        foreach (var (_, scope) in occurrences)
+        {
+            if (!scopeText.ContainsKey(scope))
+                scopeText[scope] = scope.ToString();
+        }
+
         var scopeCounts = occurrences
             .GroupBy(o => o.Scope)
             .ToDictionary(g => g.Key, g => g.Count());
@@ -144,7 +153,7 @@ public sealed class DynamicKeywordRule : IDetectionRule
                 lineNumber,
                 location.StartLinePosition.Character + 1,
                 "Use of 'dynamic' bypasses compile-time type checking",
-                BuildSnippet(scope, ordinals[node], scopeCounts[scope]),
+                BuildSnippet(scope, scopeText[scope], ordinals[node], scopeCounts[scope]),
                 "Replace 'dynamic' with a concrete type, a generic type parameter, or an interface. If dynamic is genuinely required (COM interop, dynamic proxy boundary), use [SlopwatchSuppress(\"SW021\", \"reason with 20+ chars\", \"Interop\")]"
             );
         }
@@ -188,8 +197,16 @@ public sealed class DynamicKeywordRule : IDetectionRule
     /// Determines whether a node sits inside a context excluded from the ban.
     /// </summary>
     /// <remarks>
-    /// <c>nameof(dynamic)</c> and attribute arguments produce a string or metadata rather
-    /// than a dynamic-typed slot, so they have no runtime effect and are not flagged.
+    /// <para>
+    /// Attribute arguments produce metadata rather than a dynamic-typed slot, so they are
+    /// excluded. Note that <c>typeof(dynamic)</c> is CS1962 and cannot appear in valid code,
+    /// so this exclusion is defensive rather than load-bearing.
+    /// </para>
+    /// <para>
+    /// <c>nameof(dynamic)</c> is CS0103 and does not compile, so no exclusion is needed for it.
+    /// An earlier version excluded any invocation whose callee was named <c>nameof</c>, which
+    /// wrongly suppressed detection inside a user-defined method of that name.
+    /// </para>
     /// </remarks>
     private static bool IsInExcludedContext(SyntaxNode node)
     {
@@ -197,10 +214,6 @@ public sealed class DynamicKeywordRule : IDetectionRule
         {
             switch (current)
             {
-                case InvocationExpressionSyntax invocation
-                    when invocation.Expression is IdentifierNameSyntax { Identifier.ValueText: "nameof" }:
-                    return true;
-
                 case AttributeSyntax:
                     return true;
 
@@ -236,32 +249,32 @@ public sealed class DynamicKeywordRule : IDetectionRule
     }
 
     /// <summary>
-    /// Builds the snippet text, disambiguating occurrences that would otherwise collide.
+    /// Builds the snippet text used for reporting and baseline hashing.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Two identical statements can appear in the same member more than once — in sibling
-    /// <c>if</c>/<c>else</c> blocks, in different loops, or in separate <c>try</c>/<c>catch</c>
-    /// bodies. Their statement text is identical, so without extra context they hash the same
-    /// and baselining one would exempt the other.
+    /// Baseline entries hash on RuleId + path + snippet, so the snippet must uniquely identify
+    /// one occurrence. Earlier attempts qualified the statement text with the enclosing member
+    /// name, then with a signature, then with a block path. Each was correct for the case that
+    /// prompted it and wrong for the next one: overloads, sibling blocks, switch cases, catch
+    /// clauses, same-named local functions, getter/setter pairs, and generic arity all collided.
     /// </para>
     /// <para>
-    /// The qualifier therefore combines the enclosing member (type chain + signature) with the
-    /// chain of enclosing block-introducing constructs. That keeps sibling blocks distinct while
-    /// staying stable when unrelated code elsewhere in the member changes.
+    /// This builds a <em>structural path</em> instead: the chain of enclosing declarations and
+    /// block-introducing constructs, each tagged with a discriminator that makes it unique
+    /// (parameter types, generic arity, ref modifiers, case labels, exception types, accessor
+    /// kind). The path is unique by construction rather than by enumeration of special cases.
+    /// </para>
+    /// <para>
+    /// Line numbers are deliberately excluded: they would un-baseline an occurrence whenever
+    /// unrelated code above it moved.
     /// </para>
     /// </remarks>
-    private static string BuildSnippet(SyntaxNode scope, int occurrence, int total)
+    private static string BuildSnippet(SyntaxNode scope, string scopeText, int occurrence, int total)
     {
-        var text = scope.ToString();
-        var member = FindEnclosingMemberName(scope);
-        var blockPath = BuildBlockPath(scope);
+        var path = BuildStructuralPath(scope);
 
-        var qualifier = string.Join(
-            " > ",
-            new[] { member, blockPath }.Where(p => !string.IsNullOrEmpty(p)));
-
-        var qualified = qualifier.Length == 0 ? text : $"{qualifier}: {text}";
+        var qualified = path.Length == 0 ? scopeText : $"{path}: {scopeText}";
 
         return total <= 1
             ? qualified
@@ -269,156 +282,187 @@ public sealed class DynamicKeywordRule : IDetectionRule
     }
 
     /// <summary>
-    /// Builds a path of the block-introducing constructs enclosing a scope.
+    /// Builds a unique structural path from the file root down to the given scope.
     /// </summary>
     /// <remarks>
-    /// Distinguishes identical statements in sibling blocks (<c>if</c> vs <c>else</c>,
-    /// <c>try</c> vs <c>catch</c>, one loop vs another) without depending on line numbers,
-    /// which would un-baseline an occurrence whenever unrelated code above it moved.
+    /// Sibling constructs of the same kind (two <c>if</c> statements, two lambdas, two
+    /// <c>foreach</c> loops) would otherwise produce identical paths. Each segment therefore
+    /// carries its ordinal among same-kind siblings, which is stable as long as the sibling
+    /// order is unchanged.
     /// </remarks>
-    private static string BuildBlockPath(SyntaxNode scope)
+    private static string BuildStructuralPath(SyntaxNode scope)
     {
         var segments = new List<string>();
 
+        // Include the scope itself so two identical statements in the same block differ by
+        // their sibling ordinal.
+        var scopeOrdinal = SiblingOrdinal(scope);
+        if (scopeOrdinal is not null)
+            segments.Add($"stmt#{scopeOrdinal}");
+
         for (var current = scope.Parent; current is not null; current = current.Parent)
         {
-            switch (current)
+            var segment = DescribeNode(current);
+            if (segment is null)
+                continue;
+
+            // Only constructs without a natural discriminator need a sibling ordinal.
+            // Named members already carry their name and signature, so adding an ordinal
+            // would change their hash whenever a sibling is added — un-baselining
+            // pre-existing occurrences for no reason.
+            if (HasNaturalDiscriminator(current))
             {
-                case ElseClauseSyntax:
-                    segments.Add("else");
-                    break;
-                case IfStatementSyntax:
-                    segments.Add("if");
-                    break;
-                case ForStatementSyntax:
-                    segments.Add("for");
-                    break;
-                case ForEachStatementSyntax:
-                    segments.Add("foreach");
-                    break;
-                case WhileStatementSyntax:
-                    segments.Add("while");
-                    break;
-                case DoStatementSyntax:
-                    segments.Add("do");
-                    break;
-                case SwitchStatementSyntax:
-                    segments.Add("switch");
-                    break;
-                case SwitchExpressionSyntax:
-                    segments.Add("switch-expr");
-                    break;
-                case TryStatementSyntax:
-                    segments.Add("try");
-                    break;
-                case CatchClauseSyntax:
-                    segments.Add("catch");
-                    break;
-                case FinallyClauseSyntax:
-                    segments.Add("finally");
-                    break;
-                case UsingStatementSyntax:
-                    segments.Add("using");
-                    break;
-                case LockStatementSyntax:
-                    segments.Add("lock");
-                    break;
-                case CheckedStatementSyntax:
-                    segments.Add("checked");
-                    break;
-                case UnsafeStatementSyntax:
-                    segments.Add("unsafe");
-                    break;
-                case FixedStatementSyntax:
-                    segments.Add("fixed");
-                    break;
-                case LocalFunctionStatementSyntax localFunction:
-                    segments.Add("local:" + localFunction.Identifier.ValueText);
-                    break;
-                case AnonymousFunctionExpressionSyntax:
-                    segments.Add("lambda");
-                    break;
-                case MemberDeclarationSyntax:
-                    // Reached the member boundary; the member name is already in the qualifier.
-                    return string.Join("/", Enumerable.Reverse(segments));
+                segments.Add(segment);
+            }
+            else
+            {
+                var ordinal = SiblingOrdinal(current);
+                segments.Add(ordinal is null ? segment : $"{segment}#{ordinal}");
             }
         }
 
-        return string.Join("/", Enumerable.Reverse(segments));
+        segments.Reverse();
+        return string.Join("/", segments);
     }
 
     /// <summary>
-    /// Gets a stable, unique name for the member enclosing a scope, used to disambiguate snippets.
+    /// Indicates whether a node's description already distinguishes it from its siblings.
     /// </summary>
     /// <remarks>
-    /// The name alone is not enough: overloads (<c>M()</c> and <c>M(int)</c>), same-named members
-    /// in different types, and same-named local functions under different methods all collide.
-    /// The qualifier therefore includes the containing type chain and, for callables, the
-    /// parameter type list.
+    /// Named declarations (types, methods, properties, fields, events, local functions) carry
+    /// their name and signature, so they are unique without an ordinal. Anonymous constructs
+    /// (<c>if</c>, <c>else</c>, loops, lambdas, <c>try</c>) need one.
     /// </remarks>
-    private static string? FindEnclosingMemberName(SyntaxNode scope)
+    private static bool HasNaturalDiscriminator(SyntaxNode node) => node switch
     {
-        for (var current = scope; current is not null; current = current.Parent)
-        {
-            var memberName = current switch
-            {
-                MethodDeclarationSyntax m => $"{m.Identifier.ValueText}({ParameterTypes(m.ParameterList)})",
-                ConstructorDeclarationSyntax c => $"{c.Identifier.ValueText}({ParameterTypes(c.ParameterList)})",
-                DestructorDeclarationSyntax d => "~" + d.Identifier.ValueText,
-                PropertyDeclarationSyntax p => p.Identifier.ValueText,
-                IndexerDeclarationSyntax i => $"this[{ParameterTypes(i.ParameterList)}]",
-                EventDeclarationSyntax e => e.Identifier.ValueText,
-                EventFieldDeclarationSyntax ef => string.Join(",", ef.Declaration.Variables.Select(v => v.Identifier.ValueText)),
-                FieldDeclarationSyntax f => string.Join(",", f.Declaration.Variables.Select(v => v.Identifier.ValueText)),
-                OperatorDeclarationSyntax o => $"operator {o.OperatorToken.ValueText}({ParameterTypes(o.ParameterList)})",
-                ConversionOperatorDeclarationSyntax co => $"operator {co.Type}({ParameterTypes(co.ParameterList)})",
-                LocalFunctionStatementSyntax lf => $"{lf.Identifier.ValueText}({ParameterTypes(lf.ParameterList)})",
-                BaseTypeDeclarationSyntax t => t.Identifier.ValueText,
-                DelegateDeclarationSyntax dd => $"{dd.Identifier.ValueText}({ParameterTypes(dd.ParameterList)})",
-                _ => null
-            };
-
-            if (memberName is null)
-                continue;
-
-            // Prefix the containing type chain so same-named members in different (including
-            // nested) types stay distinct.
-            var typeChain = BuildTypeChain(current);
-            return typeChain is null ? memberName : $"{typeChain}.{memberName}";
-        }
-
-        return null;
-    }
+        BaseTypeDeclarationSyntax => true,
+        DelegateDeclarationSyntax => true,
+        MethodDeclarationSyntax => true,
+        ConstructorDeclarationSyntax => true,
+        DestructorDeclarationSyntax => true,
+        PropertyDeclarationSyntax => true,
+        IndexerDeclarationSyntax => true,
+        EventDeclarationSyntax => true,
+        EventFieldDeclarationSyntax => true,
+        FieldDeclarationSyntax => true,
+        LocalFunctionStatementSyntax => true,
+        OperatorDeclarationSyntax => true,
+        ConversionOperatorDeclarationSyntax => true,
+        BaseNamespaceDeclarationSyntax => true,
+        SwitchSectionSyntax => true,
+        CatchClauseSyntax => true,
+        AccessorDeclarationSyntax => true,
+        _ => false
+    };
 
     /// <summary>
-    /// Builds a dotted chain of the types enclosing a member, outermost first.
+    /// Gets the 1-based ordinal of a node among its same-kind siblings, or null when it is
+    /// the only one.
     /// </summary>
-    private static string? BuildTypeChain(SyntaxNode member)
+    private static int? SiblingOrdinal(SyntaxNode node)
     {
-        var names = new List<string>();
-
-        for (var current = member.Parent; current is not null; current = current.Parent)
-        {
-            if (current is BaseTypeDeclarationSyntax type)
-                names.Add(type.Identifier.ValueText);
-        }
-
-        if (names.Count == 0)
+        var parent = node.Parent;
+        if (parent is null)
             return null;
 
-        names.Reverse();
-        return string.Join(".", names);
+        var sameKind = parent.ChildNodes().Where(n => n.RawKind == node.RawKind).ToList();
+        return sameKind.Count <= 1 ? null : sameKind.IndexOf(node) + 1;
     }
 
     /// <summary>
-    /// Renders a parameter list as a comma-separated list of parameter types.
+    /// Describes a single node in a structural path, or returns null if it is not a
+    /// path-relevant construct.
     /// </summary>
-    private static string ParameterTypes(BaseParameterListSyntax? parameters)
+    private static string? DescribeNode(SyntaxNode node)
+    {
+        return node switch
+        {
+            // --- Type declarations: include generic arity and kind ---
+            ClassDeclarationSyntax c => $"class {c.Identifier.ValueText}{Arity(c.TypeParameterList)}",
+            StructDeclarationSyntax s => $"struct {s.Identifier.ValueText}{Arity(s.TypeParameterList)}",
+            InterfaceDeclarationSyntax i => $"interface {i.Identifier.ValueText}{Arity(i.TypeParameterList)}",
+            RecordDeclarationSyntax r => $"record {r.Identifier.ValueText}{Arity(r.TypeParameterList)}",
+            EnumDeclarationSyntax e => $"enum {e.Identifier.ValueText}",
+
+            // --- Namespaces: keep same-named types in different namespaces distinct ---
+            BaseNamespaceDeclarationSyntax n => $"ns {n.Name}",
+
+            // --- Callables: include parameter types, ref kinds, and generic arity ---
+            MethodDeclarationSyntax m =>
+                $"method {m.Identifier.ValueText}{Arity(m.TypeParameterList)}({ParameterSignature(m.ParameterList)})",
+            ConstructorDeclarationSyntax c =>
+                $"ctor {c.Identifier.ValueText}({ParameterSignature(c.ParameterList)})",
+            DestructorDeclarationSyntax d => $"dtor {d.Identifier.ValueText}",
+            LocalFunctionStatementSyntax l =>
+                $"local {l.Identifier.ValueText}{Arity(l.TypeParameterList)}({ParameterSignature(l.ParameterList)})",
+            OperatorDeclarationSyntax o =>
+                $"operator {o.OperatorToken.ValueText}({ParameterSignature(o.ParameterList)})",
+            ConversionOperatorDeclarationSyntax co =>
+                $"conversion {co.ImplicitOrExplicitKeyword.ValueText} {co.Type}({ParameterSignature(co.ParameterList)})",
+            DelegateDeclarationSyntax dd =>
+                $"delegate {dd.Identifier.ValueText}{Arity(dd.TypeParameterList)}({ParameterSignature(dd.ParameterList)})",
+
+            // --- Properties and indexers: distinguish accessors ---
+            PropertyDeclarationSyntax p => $"property {p.Identifier.ValueText}",
+            IndexerDeclarationSyntax i => $"indexer this[{ParameterSignature(i.ParameterList)}]",
+            AccessorDeclarationSyntax a => $"accessor {a.Keyword.ValueText}",
+
+            // --- Fields and events ---
+            FieldDeclarationSyntax f =>
+                $"field {string.Join(",", f.Declaration.Variables.Select(v => v.Identifier.ValueText))}",
+            EventFieldDeclarationSyntax ef =>
+                $"event {string.Join(",", ef.Declaration.Variables.Select(v => v.Identifier.ValueText))}",
+            EventDeclarationSyntax e => $"event {e.Identifier.ValueText}",
+
+            // --- Block-introducing constructs: include a discriminator where one exists ---
+            IfStatementSyntax => "if",
+            ElseClauseSyntax => "else",
+            ForStatementSyntax => "for",
+            ForEachStatementSyntax fe => $"foreach {fe.Identifier.ValueText}",
+            WhileStatementSyntax => "while",
+            DoStatementSyntax => "do",
+            SwitchStatementSyntax => "switch",
+            SwitchExpressionSyntax => "switch-expr",
+            SwitchSectionSyntax section =>
+                $"case {string.Join("|", section.Labels.Select(l => l.ToString()))}",
+            TryStatementSyntax => "try",
+            CatchClauseSyntax c => $"catch {c.Declaration?.Type.ToString() ?? "all"}",
+            FinallyClauseSyntax => "finally",
+            UsingStatementSyntax => "using",
+            LockStatementSyntax => "lock",
+            CheckedStatementSyntax => "checked",
+            UnsafeStatementSyntax => "unsafe",
+            FixedStatementSyntax => "fixed",
+            AnonymousFunctionExpressionSyntax => "lambda",
+
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Renders generic arity, e.g. <c>&lt;T,U&gt;</c> becomes <c>&lt;2&gt;</c>.
+    /// </summary>
+    private static string Arity(TypeParameterListSyntax? typeParameters)
+    {
+        var count = typeParameters?.Parameters.Count ?? 0;
+        return count == 0 ? string.Empty : $"<{count}>";
+    }
+
+    /// <summary>
+    /// Renders a parameter list including ref kinds, so <c>N(int)</c> and <c>N(ref int)</c>
+    /// stay distinct.
+    /// </summary>
+    private static string ParameterSignature(BaseParameterListSyntax? parameters)
     {
         if (parameters is null || parameters.Parameters.Count == 0)
             return string.Empty;
 
-        return string.Join(",", parameters.Parameters.Select(p => p.Type?.ToString() ?? "?"));
+        return string.Join(",", parameters.Parameters.Select(p =>
+        {
+            var modifiers = string.Join(" ", p.Modifiers.Select(m => m.ValueText));
+            var type = p.Type?.ToString() ?? "?";
+            return modifiers.Length == 0 ? type : $"{modifiers} {type}";
+        }));
     }
 
     /// <summary>
