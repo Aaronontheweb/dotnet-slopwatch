@@ -68,6 +68,16 @@ public sealed class SuppressionChecker
             MethodDeclarationSyntax methodDecl => methodDecl.AttributeLists,
             PropertyDeclarationSyntax propertyDecl => propertyDecl.AttributeLists,
             FieldDeclarationSyntax fieldDecl => fieldDecl.AttributeLists,
+            ConstructorDeclarationSyntax ctorDecl => ctorDecl.AttributeLists,
+            DestructorDeclarationSyntax dtorDecl => dtorDecl.AttributeLists,
+            IndexerDeclarationSyntax indexerDecl => indexerDecl.AttributeLists,
+            EventDeclarationSyntax eventDecl => eventDecl.AttributeLists,
+            EventFieldDeclarationSyntax eventFieldDecl => eventFieldDecl.AttributeLists,
+            OperatorDeclarationSyntax operatorDecl => operatorDecl.AttributeLists,
+            ConversionOperatorDeclarationSyntax conversionDecl => conversionDecl.AttributeLists,
+            DelegateDeclarationSyntax delegateDecl => delegateDecl.AttributeLists,
+            LocalFunctionStatementSyntax localFuncDecl => localFuncDecl.AttributeLists,
+            AccessorDeclarationSyntax accessorDecl => accessorDecl.AttributeLists,
             _ => Enumerable.Empty<AttributeListSyntax>()
         };
 

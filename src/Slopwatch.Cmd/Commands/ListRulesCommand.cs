@@ -26,7 +26,8 @@ public sealed class ListRulesCommand
                 new EmptyCatchBlockRule(),
                 new TimeoutJigglingRule(),
                 new ProjectFileRule(),
-                new PackageVersionOverrideRule()
+                new PackageVersionOverrideRule(),
+                new DynamicKeywordRule()
             };
 
             Console.WriteLine("Available Detection Rules:");

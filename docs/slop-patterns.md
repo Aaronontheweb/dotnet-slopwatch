@@ -1215,6 +1215,55 @@ public void ProcessOrder_SavesToDatabase()
 
 ---
 
+### SW021: Dynamic Keyword Ban
+
+**Severity**: Error
+
+**Description**: Any use of the `dynamic` keyword in a type position. This is a hard ban, not a heuristic.
+
+**Why LLMs Do This**: `dynamic` is the cheapest way to make a type error disappear. Instead of fixing a mismatched type, an LLM can widen a parameter, return type, or local to `dynamic` and the compiler stops complaining. The code compiles, the tests pass, and the type system has been silently switched off. This is a textbook reward-hacking shortcut: it satisfies the immediate signal (green build) while destroying the guarantees that would have caught the real defect.
+
+**Why it matters beyond the immediate bug**:
+- Bypasses compile-time type checking entirely — errors move from build time to production
+- Defeats static analysis, refactoring, rename, and IDE tooling
+- Breaks trimming, NativeAOT, and source generators (the runtime binder is reflection-based)
+- Silently changes overload resolution and extension method binding
+- EF Core, serializers, and ORMs cannot map `dynamic` members — migrations and schema generation break
+
+**Detection Methods**:
+- Roslyn: every `IdentifierNameSyntax` whose text is `dynamic` occupying a type slot
+- Covered positions: parameters, return types, fields, properties, locals, generic type arguments, casts, `as` expressions, array element types, nullable/ref/pointer element types, `typeof`, `default`, `foreach` element types, tuple elements, base types, declaration expressions, catch declarations, object creation
+
+**Example Violation**:
+```csharp
+// Before: intentional type constraints
+public OrderResult ProcessOrder(OrderRequest request)
+{
+    return _processor.Handle(request);
+}
+
+// After: LLM "fixes" a type mismatch with dynamic
+public dynamic ProcessOrder(dynamic request)
+{
+    return _processor.Handle(request);
+}
+```
+
+**Legitimate uses** (suppress or baseline these):
+- COM interop and Office automation
+- `System.Dynamic` / DLR host boundaries
+- Dynamic proxy libraries that require late binding
+
+**Suppression**:
+```csharp
+[SlopwatchSuppress("SW021", "COM interop requires late-bound dispatch on this boundary")]
+public void InvokeExcel(dynamic workbook) { ... }
+```
+
+Pre-existing `dynamic` in a codebase can be absorbed with `slopwatch init` — the baseline records each occurrence by enclosing declaration, so newly introduced `dynamic` is still flagged.
+
+---
+
 ## Detection Implementation Guidelines
 
 ### Priority Levels for Implementation
@@ -1244,6 +1293,9 @@ public void ProcessOrder_SavesToDatabase()
    - SW018: Lock/Synchronization Removal
    - SW019: Async/Await Removal
    - SW020: Mock Overuse in Tests
+
+4. **Implemented**:
+   - SW021: Dynamic Keyword Ban
 
 ### Roslyn Analysis Approach
 
