@@ -216,7 +216,7 @@ The attribute check is per-type rather than per-file: a hand-written type in a f
 Two deliberate deviations from Roslyn, both conservative (a file is analyzed rather than skipped):
 
 - A `partial` type is never treated as generated, even when its only declaration carries the attribute.
-- Qualified attribute names must match `System.CodeDom.Compiler.GeneratedCode` or `System.Diagnostics.DebuggerNonUserCode` exactly. An unrelated attribute such as `Acme.GeneratedCode` does not cause a skip.
+- Attribute identity is resolved from syntax alone: a qualified name must match `System.CodeDom.Compiler.GeneratedCode` or `System.Diagnostics.DebuggerNonUserCode` exactly, and an unqualified name is accepted only when the declaring namespace is imported in the attribute's lexical scope with no shadowing alias or local type.
 
 Configure the behavior in `.slopwatch/config.json`:
 
@@ -236,9 +236,9 @@ Configure the behavior in `.slopwatch/config.json`:
 
 ### Interaction with baselines
 
-Baseline entries for skipped files are preserved during `--update-baseline`. Without this, switching to `skip` would silently delete those entries, and switching back to `analyze` would resurface every finding at once.
+Baseline entries for files skipped entirely are preserved during `--update-baseline`. Without this, switching to `skip` would silently delete those entries, and switching back to `analyze` would resurface every finding at once.
 
-Preservation is scoped to what was actually skipped. A file skipped entirely keeps all of its entries. A file that was analyzed but had individual findings filtered out as generated keeps only those entries — a fixed hand-written finding in the same file is still pruned.
+A file that is analyzed but has individual findings filtered out as generated is pruned normally. Preserving per-finding entries is unsound: the baseline hash is rule + path + snippet, which cannot distinguish two identical snippets in the same file, and line numbers are neither stable under edits nor unique within a line. Pruning a live generated entry is only noise; shielding a stale hand-written entry would be a false negative.
 
 ## Suppression Priority
 

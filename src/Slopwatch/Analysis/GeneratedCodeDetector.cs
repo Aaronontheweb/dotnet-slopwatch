@@ -154,7 +154,7 @@ public static class GeneratedCodeDetector
             {
                 foreach (var attribute in attributeList.Attributes)
                 {
-                    if (IsGeneratedCodeAttributeName(attribute.Name, imports))
+                    if (IsGeneratedCodeAttributeName(attribute.Name, imports, typeDeclaration))
                     {
                         return true;
                     }
@@ -346,7 +346,7 @@ public static class GeneratedCodeDetector
     /// accepted when the expected namespace is imported and no <c>using</c> alias shadows the
     /// name — otherwise the attribute could resolve to a different type entirely.
     /// </remarks>
-    private static bool IsGeneratedCodeAttributeName(NameSyntax name, ImportContext? imports)
+    private static bool IsGeneratedCodeAttributeName(NameSyntax name, ImportContext? imports, SyntaxNode declaration)
     {
         if (name is SimpleNameSyntax simple)
         {
@@ -358,9 +358,9 @@ public static class GeneratedCodeDetector
             }
 
             // Without a compilation we cannot resolve the symbol, so require the evidence that
-            // the name binds to the framework attribute: the namespace is imported and no alias
-            // redefines the identifier.
-            return imports is not null && imports.BindsToFrameworkAttribute(identifier);
+            // the name binds to the framework attribute: the declaring namespace is imported in
+            // scope, and no alias or local type shadows the identifier.
+            return imports is not null && imports.BindsToFrameworkAttribute(identifier, declaration);
         }
 
         var qualified = name.ToString();
@@ -395,29 +395,30 @@ public static class GeneratedCodeDetector
     }
 
     /// <summary>
-    /// The <c>using</c> directives in scope for a syntax tree.
+    /// Resolves whether an unqualified attribute identifier binds to the framework attribute.
     /// </summary>
+    /// <remarks>
+    /// Without a compilation this cannot be decided exactly, so the check is deliberately
+    /// conservative: the identifier must not be shadowed by an alias or a locally declared type,
+    /// and the namespace that actually declares the attribute must be imported in the
+    /// declaration's lexical scope.
+    /// </remarks>
     private sealed class ImportContext
     {
-        private readonly HashSet<string> _importedNamespaces = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, string> _aliases = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _declaredTypeNames = new(StringComparer.Ordinal);
+
+        private ImportContext()
+        {
+        }
 
         public static ImportContext Create(SyntaxNode root)
         {
             var context = new ImportContext();
 
-            foreach (var directive in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
+            // Any type declared in this file shadows a same-named framework attribute.
+            foreach (var declaration in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
             {
-                if (directive.Alias is not null)
-                {
-                    context._aliases[directive.Alias.Name.Identifier.ValueText] = directive.Name?.ToString() ?? string.Empty;
-                    continue;
-                }
-
-                if (directive.Name is not null)
-                {
-                    context._importedNamespaces.Add(directive.Name.ToString());
-                }
+                context._declaredTypeNames.Add(declaration.Identifier.ValueText);
             }
 
             return context;
@@ -426,17 +427,77 @@ public static class GeneratedCodeDetector
         /// <summary>
         /// Determines whether an unqualified attribute identifier resolves to the framework type.
         /// </summary>
-        public bool BindsToFrameworkAttribute(string identifier)
+        /// <param name="identifier">The attribute identifier as written.</param>
+        /// <param name="declaration">The declaration the attribute is applied to.</param>
+        public bool BindsToFrameworkAttribute(string identifier, SyntaxNode declaration)
         {
-            // An alias with this name shadows the framework attribute.
-            if (_aliases.ContainsKey(identifier))
+            // A type declared in this file shadows the framework attribute. Attribute usage may
+            // omit the "Attribute" suffix, so check both spellings.
+            if (_declaredTypeNames.Contains(identifier)
+                || _declaredTypeNames.Contains(identifier + "Attribute"))
             {
                 return false;
             }
 
-            // The attribute's namespace must be imported for the unqualified name to bind to it.
-            return _importedNamespaces.Contains(GeneratedCodeNamespace)
-                || _importedNamespaces.Contains(DebuggerNamespace);
+            var requiredNamespace = RequiredNamespace(identifier);
+            if (requiredNamespace is null)
+            {
+                return false;
+            }
+
+            // Only using directives in the declaration's lexical scope can bind the name.
+            foreach (var scope in declaration.AncestorsAndSelf())
+            {
+                if (scope is not BaseNamespaceDeclarationSyntax and not CompilationUnitSyntax)
+                {
+                    continue;
+                }
+
+                foreach (var directive in GetUsingDirectives(scope))
+                {
+                    // An alias with this name shadows the framework attribute.
+                    if (directive.Alias is not null)
+                    {
+                        if (string.Equals(directive.Alias.Name.Identifier.ValueText, identifier, StringComparison.Ordinal))
+                        {
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (directive.Name is not null
+                        && string.Equals(directive.Name.ToString(), requiredNamespace, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static IEnumerable<UsingDirectiveSyntax> GetUsingDirectives(SyntaxNode scope)
+        {
+            return scope switch
+            {
+                CompilationUnitSyntax compilationUnit => compilationUnit.Usings,
+                BaseNamespaceDeclarationSyntax namespaceDeclaration => namespaceDeclaration.Usings,
+                _ => Enumerable.Empty<UsingDirectiveSyntax>()
+            };
+        }
+
+        /// <summary>
+        /// Maps an attribute identifier to the namespace that declares it.
+        /// </summary>
+        private static string? RequiredNamespace(string identifier)
+        {
+            return identifier switch
+            {
+                "GeneratedCode" or "GeneratedCodeAttribute" => GeneratedCodeNamespace,
+                "DebuggerNonUserCode" or "DebuggerNonUserCodeAttribute" => DebuggerNamespace,
+                _ => null
+            };
         }
 
         private const string GeneratedCodeNamespace = "System.CodeDom.Compiler";

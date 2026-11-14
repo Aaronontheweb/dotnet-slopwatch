@@ -23,8 +23,6 @@ public sealed class FileAnalyzer
     private readonly AnalysisOptions _options;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _skippedGeneratedFiles =
         new(StringComparer.OrdinalIgnoreCase);
-    private readonly System.Collections.Concurrent.ConcurrentQueue<DetectionResult> _skippedGeneratedResults =
-        new();
 
     /// <summary>
     /// Gets the paths of files skipped entirely because they declare themselves generated.
@@ -34,16 +32,6 @@ public sealed class FileAnalyzer
     /// present in the scan but deliberately not analyzed.
     /// </remarks>
     public IReadOnlyCollection<string> SkippedGeneratedFiles => _skippedGeneratedFiles.Keys.ToList();
-
-    /// <summary>
-    /// Gets the individual findings filtered out because they fell inside a generated type.
-    /// </summary>
-    /// <remarks>
-    /// A file can contain both generated and hand-written types. In that case the file is still
-    /// analyzed, so only the filtered findings — not every entry for the file — should be
-    /// preserved during baseline synchronization.
-    /// </remarks>
-    public IReadOnlyCollection<DetectionResult> SkippedGeneratedResults => _skippedGeneratedResults.ToList();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FileAnalyzer"/> class.
@@ -155,9 +143,10 @@ public sealed class FileAnalyzer
             {
                 if (_options.GeneratedCodeMode == GeneratedCodeMode.Skip)
                 {
-                    // Record the specific finding, not the whole file: the file may also contain
-                    // hand-written types whose entries must still be pruned when they are fixed.
-                    _skippedGeneratedResults.Enqueue(mapped);
+                    // The file is still analyzed for its hand-written types, so it is not
+                    // recorded as a whole-file skip. Baseline entries for filtered findings are
+                    // pruned normally: the hash cannot distinguish identical snippets, and
+                    // preserving them could shield a stale hand-written entry.
                     continue;
                 }
 

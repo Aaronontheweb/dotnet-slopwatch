@@ -248,7 +248,7 @@ These are the same signals Roslyn's own analyzers use, so slopwatch skips what t
 Two deliberate deviations from Roslyn, both in the conservative direction (a file is analyzed rather than skipped):
 
 - A `partial` type is never treated as generated, even when its only declaration carries the attribute. The attribute may live on a declaration in another file, and resolving that requires a compilation.
-- An attribute referenced through a `using` alias is not recognized. Qualified names must match `System.CodeDom.Compiler.GeneratedCode` or `System.Diagnostics.DebuggerNonUserCode` exactly, so an unrelated attribute such as `Acme.GeneratedCode` does not cause a skip.
+- Attribute identity is resolved from syntax alone. A qualified name must match `System.CodeDom.Compiler.GeneratedCode` or `System.Diagnostics.DebuggerNonUserCode` exactly. An unqualified name is accepted only when the declaring namespace is imported in the attribute's lexical scope and no `using` alias or locally declared type shadows it. An unrelated attribute such as `Acme.GeneratedCode` does not cause a skip.
 
 Control this with the `generatedCode` section in `.slopwatch/config.json`:
 

@@ -329,8 +329,7 @@ public class BaselineFileTests
             currentResults,
             "/root",
             new[] { "/root/src/Model.g.cs", "/root/src/A.cs" },
-            new[] { "/root/src/Model.g.cs" },
-            skippedResults: null);
+            new[] { "/root/src/Model.g.cs" });
 
         Assert.Equal(1, removed);
         Assert.Equal(0, added);
@@ -358,72 +357,40 @@ public class BaselineFileTests
     }
 
     [Fact]
-    public void SyncWithDetections_PreservesOnlySkippedResultsForPartiallyAnalyzedFiles()
+    public void SyncWithDetections_PrunesPartiallyAnalyzedFilesNormally()
     {
-        // A file can contain both a generated type and a hand-written type. Only the filtered
-        // generated finding should be preserved; a fixed hand-written finding must still be pruned.
+        // A file that was analyzed but had individual findings filtered out as generated is
+        // pruned normally. Preserving per-finding entries is unsound: the hash cannot distinguish
+        // identical snippets, and line numbers are neither stable nor unique. Pruning a live
+        // generated entry is noise; shielding a stale hand-written entry is a false negative.
         var baseline = new BaselineFile();
-        var generatedFinding = CreateResult("SW003", "/root/src/Mixed.cs", 10, "generated-catch");
-        var fixedHandWrittenFinding = CreateResult("SW003", "/root/src/Mixed.cs", 40, "fixed-catch");
+        var generatedFinding = CreateResult("SW003", "/root/src/Mixed.cs", 10, "catch { }");
+        var fixedHandWrittenFinding = CreateResult("SW003", "/root/src/Mixed.cs", 40, "catch { throw; }");
         baseline.AddEntry(generatedFinding, "/root");
         baseline.AddEntry(fixedHandWrittenFinding, "/root");
 
         var (removed, added, kept) = baseline.SyncWithDetections(
             Array.Empty<DetectionResult>(),
             "/root",
-            new[] { "/root/src/Mixed.cs" },
-            skippedFiles: null,
-            skippedResults: new[] { generatedFinding });
+            new[] { "/root/src/Mixed.cs" });
 
-        Assert.Equal(1, removed);
-        Assert.Equal(0, added);
-        Assert.Equal(1, kept);
-        Assert.Single(baseline.Entries);
-        Assert.Contains(baseline.Entries, e => e.CodeSnippet == "generated-catch");
-    }
-
-    [Fact]
-    public void SyncWithDetections_DoesNotShieldCollidingSnippetAtDifferentLine()
-    {
-        // Two identical snippets in different types produce the same hash. A skipped generated
-        // finding must not preserve a stale hand-written entry that happens to share the snippet.
-        var baseline = new BaselineFile();
-        var staleHandWritten = CreateResult("SW003", "/root/src/Mixed.cs", 40, "catch {}");
-        baseline.AddEntry(staleHandWritten, "/root");
-
-        var skippedGenerated = CreateResult("SW003", "/root/src/Mixed.cs", 10, "catch {}");
-
-        var (removed, added, kept) = baseline.SyncWithDetections(
-            Array.Empty<DetectionResult>(),
-            "/root",
-            new[] { "/root/src/Mixed.cs" },
-            skippedFiles: null,
-            skippedResults: new[] { skippedGenerated });
-
-        Assert.Equal(1, removed);
+        Assert.Equal(2, removed);
         Assert.Equal(0, added);
         Assert.Equal(0, kept);
         Assert.Empty(baseline.Entries);
     }
 
     [Fact]
-    public void SyncWithDetections_PreservesSkippedEntryAtMatchingLine()
+    public void SyncWithDetections_ThreeParameterOverloadRemainsCallable()
     {
+        // Source compatibility: the two-argument and three-argument forms must still compile.
         var baseline = new BaselineFile();
-        var skippedGenerated = CreateResult("SW003", "/root/src/Mixed.cs", 10, "catch {}");
-        baseline.AddEntry(skippedGenerated, "/root");
 
-        var (removed, added, kept) = baseline.SyncWithDetections(
-            Array.Empty<DetectionResult>(),
-            "/root",
-            new[] { "/root/src/Mixed.cs" },
-            skippedFiles: null,
-            skippedResults: new[] { skippedGenerated });
+        var twoArg = baseline.SyncWithDetections(Array.Empty<DetectionResult>(), "/root");
+        var threeArg = baseline.SyncWithDetections(Array.Empty<DetectionResult>(), "/root", null);
 
-        Assert.Equal(0, removed);
-        Assert.Equal(0, added);
-        Assert.Equal(1, kept);
-        Assert.Single(baseline.Entries);
+        Assert.Equal(0, twoArg.removed);
+        Assert.Equal(0, threeArg.removed);
     }
 
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)

@@ -228,9 +228,9 @@ public sealed class BaselineFile
     public (int removed, int added, int kept) SyncWithDetections(
         IEnumerable<DetectionResult> results,
         string rootDirectory,
-        IEnumerable<string>? scannedFiles)
+        IEnumerable<string>? scannedFiles = null)
     {
-        return SyncWithDetections(results, rootDirectory, scannedFiles, skippedFiles: null, skippedResults: null);
+        return SyncWithDetections(results, rootDirectory, scannedFiles, skippedFiles: null);
     }
 
     /// <summary>
@@ -244,16 +244,21 @@ public sealed class BaselineFile
     /// <param name="skippedFiles">Optional list of files that were present in the scan but
     /// deliberately not analyzed (for example, generated code). Entries for these files are
     /// never removed, so changing the analysis configuration later does not resurface findings.</param>
-    /// <param name="skippedResults">Optional list of individual findings that were filtered out
-    /// because they fell inside a generated type. Only these entries are preserved; other entries
-    /// for the same file are still pruned when they no longer reproduce.</param>
     /// <returns>Tuple of (removed, added, kept) counts</returns>
+    /// <remarks>
+    /// Preservation is scoped to whole files. A file that was only partially analyzed — some
+    /// findings filtered out as generated, others reported — is pruned normally. The baseline
+    /// hash is rule + path + snippet, which cannot distinguish two identical snippets in the
+    /// same file, and line numbers are neither stable under edits nor unique within a line.
+    /// Preserving individual findings would therefore risk shielding a stale hand-written entry,
+    /// which is a false negative. Pruning a live generated entry is only noise, so the
+    /// conservative direction is to prune.
+    /// </remarks>
     public (int removed, int added, int kept) SyncWithDetections(
         IEnumerable<DetectionResult> results,
         string rootDirectory,
         IEnumerable<string>? scannedFiles,
-        IEnumerable<string>? skippedFiles,
-        IEnumerable<DetectionResult>? skippedResults)
+        IEnumerable<string>? skippedFiles)
     {
         // Build a set of all current hashes from the detection results
         var currentHashes = new HashSet<string>();
@@ -263,25 +268,6 @@ public sealed class BaselineFile
             var codeSnippet = result.CodeSnippet ?? string.Empty;
             var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
             currentHashes.Add(hash);
-        }
-
-        // Findings filtered out as generated are treated as still present, so their entries
-        // survive the prune without preserving unrelated entries for the same file.
-        //
-        // The baseline hash is rule + path + snippet, so two identical snippets in different
-        // types collide. Preserving on hash alone would let a skipped generated finding shield a
-        // stale hand-written entry with the same snippet. Requiring the line to match as well
-        // keeps the preservation scoped to the finding that was actually skipped.
-        var skippedResultKeys = new HashSet<(string Hash, int LineNumber)>();
-        if (skippedResults is not null)
-        {
-            foreach (var result in skippedResults)
-            {
-                var relativePath = GetRelativePath(result.FilePath, rootDirectory);
-                var codeSnippet = result.CodeSnippet ?? string.Empty;
-                var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
-                skippedResultKeys.Add((hash, result.LineNumber));
-            }
         }
 
         HashSet<string>? scopedFilePaths = null;
@@ -333,15 +319,6 @@ public sealed class BaselineFile
 
             if (!currentHashes.Contains(e.Hash))
             {
-                // The hash is absent from live results. It may still belong to a finding that was
-                // skipped as generated — but only if that finding sits on the same line. A
-                // colliding snippet in a different type must not shield a stale entry.
-                if (skippedResultKeys.Contains((e.Hash, e.LineNumber)))
-                {
-                    kept++;
-                    return false;
-                }
-
                 removed++;
                 return true;
             }

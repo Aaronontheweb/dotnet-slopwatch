@@ -311,6 +311,125 @@ public class GeneratedCodeDetectorTests
     }
 
     [Fact]
+    public void Test_DoesNotDetectImportFromUnrelatedNamespaceScope()
+    {
+        // The framework namespace is imported only inside namespace A. A sibling namespace B
+        // declares its own GeneratedCodeAttribute, so [GeneratedCode] in B binds to that type.
+        const string content = """
+            namespace A
+            {
+                using System.CodeDom.Compiler;
+                class UsesFramework { }
+            }
+
+            namespace B
+            {
+                public sealed class GeneratedCodeAttribute : System.Attribute { }
+
+                [GeneratedCode]
+                class HandWritten
+                {
+                    void M() { }
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 12);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
+    public void Test_DoesNotDetectWhenWrongFrameworkNamespaceImported()
+    {
+        // System.Diagnostics does not declare GeneratedCodeAttribute, so [GeneratedCode] cannot
+        // bind to the framework attribute here.
+        const string content = """
+            using System.Diagnostics;
+
+            namespace N
+            {
+                [GeneratedCode("t","1")]
+                class HandWritten
+                {
+                    void M() { }
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 8);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
+    public void Test_DoesNotDetectWhenLocalTypeShadowsFrameworkAttribute()
+    {
+        // A GeneratedCodeAttribute declared in this file shadows the framework type.
+        const string content = """
+            using System.CodeDom.Compiler;
+
+            namespace N
+            {
+                public sealed class GeneratedCodeAttribute : System.Attribute { }
+
+                [GeneratedCode]
+                class HandWritten
+                {
+                    void M() { }
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 10);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
+    public void Test_DoesNotDetectAliasWithAttributeSuffix()
+    {
+        // The alias is named GeneratedCodeAttribute but usage is shortened to [GeneratedCode].
+        const string content = """
+            using GeneratedCodeAttribute = Acme.MarkerAttribute;
+
+            namespace N
+            {
+                [GeneratedCode]
+                class HandWritten
+                {
+                    void M() { }
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 8);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
+    public void Test_DetectsDebuggerNonUserCodeWithCorrectNamespace()
+    {
+        const string content = """
+            using System.Diagnostics;
+
+            namespace N
+            {
+                [DebuggerNonUserCode]
+                class G
+                {
+                    void M() { }
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 8);
+
+        Assert.True(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
     public void Test_DoesNotDetectUnrelatedQualifiedGeneratedCodeAttribute()
     {
         // Acme.GeneratedCodeAttribute is a different attribute from
