@@ -239,21 +239,112 @@ public sealed class DynamicKeywordRule : IDetectionRule
     /// Builds the snippet text, disambiguating occurrences that would otherwise collide.
     /// </summary>
     /// <remarks>
-    /// Two identical statements in different methods (<c>void A() { dynamic x = 1; }</c> and
-    /// <c>void B() { dynamic x = 1; }</c>) produce identical statement text. Without a
-    /// qualifier they hash the same, so baselining one would exempt the other. The enclosing
-    /// member's name is prepended to keep those distinct.
+    /// <para>
+    /// Two identical statements can appear in the same member more than once — in sibling
+    /// <c>if</c>/<c>else</c> blocks, in different loops, or in separate <c>try</c>/<c>catch</c>
+    /// bodies. Their statement text is identical, so without extra context they hash the same
+    /// and baselining one would exempt the other.
+    /// </para>
+    /// <para>
+    /// The qualifier therefore combines the enclosing member (type chain + signature) with the
+    /// chain of enclosing block-introducing constructs. That keeps sibling blocks distinct while
+    /// staying stable when unrelated code elsewhere in the member changes.
+    /// </para>
     /// </remarks>
     private static string BuildSnippet(SyntaxNode scope, int occurrence, int total)
     {
         var text = scope.ToString();
-        var qualifier = FindEnclosingMemberName(scope);
+        var member = FindEnclosingMemberName(scope);
+        var blockPath = BuildBlockPath(scope);
 
-        var qualified = qualifier is null ? text : $"{qualifier}: {text}";
+        var qualifier = string.Join(
+            " > ",
+            new[] { member, blockPath }.Where(p => !string.IsNullOrEmpty(p)));
+
+        var qualified = qualifier.Length == 0 ? text : $"{qualifier}: {text}";
 
         return total <= 1
             ? qualified
             : $"{qualified}\n// dynamic occurrence {occurrence} of {total}";
+    }
+
+    /// <summary>
+    /// Builds a path of the block-introducing constructs enclosing a scope.
+    /// </summary>
+    /// <remarks>
+    /// Distinguishes identical statements in sibling blocks (<c>if</c> vs <c>else</c>,
+    /// <c>try</c> vs <c>catch</c>, one loop vs another) without depending on line numbers,
+    /// which would un-baseline an occurrence whenever unrelated code above it moved.
+    /// </remarks>
+    private static string BuildBlockPath(SyntaxNode scope)
+    {
+        var segments = new List<string>();
+
+        for (var current = scope.Parent; current is not null; current = current.Parent)
+        {
+            switch (current)
+            {
+                case ElseClauseSyntax:
+                    segments.Add("else");
+                    break;
+                case IfStatementSyntax:
+                    segments.Add("if");
+                    break;
+                case ForStatementSyntax:
+                    segments.Add("for");
+                    break;
+                case ForEachStatementSyntax:
+                    segments.Add("foreach");
+                    break;
+                case WhileStatementSyntax:
+                    segments.Add("while");
+                    break;
+                case DoStatementSyntax:
+                    segments.Add("do");
+                    break;
+                case SwitchStatementSyntax:
+                    segments.Add("switch");
+                    break;
+                case SwitchExpressionSyntax:
+                    segments.Add("switch-expr");
+                    break;
+                case TryStatementSyntax:
+                    segments.Add("try");
+                    break;
+                case CatchClauseSyntax:
+                    segments.Add("catch");
+                    break;
+                case FinallyClauseSyntax:
+                    segments.Add("finally");
+                    break;
+                case UsingStatementSyntax:
+                    segments.Add("using");
+                    break;
+                case LockStatementSyntax:
+                    segments.Add("lock");
+                    break;
+                case CheckedStatementSyntax:
+                    segments.Add("checked");
+                    break;
+                case UnsafeStatementSyntax:
+                    segments.Add("unsafe");
+                    break;
+                case FixedStatementSyntax:
+                    segments.Add("fixed");
+                    break;
+                case LocalFunctionStatementSyntax localFunction:
+                    segments.Add("local:" + localFunction.Identifier.ValueText);
+                    break;
+                case AnonymousFunctionExpressionSyntax:
+                    segments.Add("lambda");
+                    break;
+                case MemberDeclarationSyntax:
+                    // Reached the member boundary; the member name is already in the qualifier.
+                    return string.Join("/", Enumerable.Reverse(segments));
+            }
+        }
+
+        return string.Join("/", Enumerable.Reverse(segments));
     }
 
     /// <summary>

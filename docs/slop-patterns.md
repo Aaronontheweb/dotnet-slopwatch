@@ -1254,6 +1254,8 @@ public dynamic ProcessOrder(dynamic request)
 - `System.Dynamic` / DLR host boundaries
 - Dynamic proxy libraries that require late binding
 
+**Note on invalid positions**: `typeof(dynamic)` (CS1962) and `class C : dynamic` (CS1965) are compile errors, so they cannot appear in code that builds. The rule still flags them — a hard ban should not depend on the code being valid — but they are not a practical concern.
+
 **Suppression**:
 ```csharp
 [SlopwatchSuppress("SW021", "COM interop requires late-bound dispatch on this boundary", "Interop")]

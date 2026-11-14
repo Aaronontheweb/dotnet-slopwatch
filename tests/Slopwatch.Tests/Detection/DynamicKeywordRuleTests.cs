@@ -885,6 +885,79 @@ public class TestClass
         Assert.Equal("SW021", finding.RuleId);
     }
 
+    [Fact]
+    public void Test_SiblingBlocksProduceDistinctSnippets()
+    {
+        // Arrange - identical statements in sibling if/else blocks must not share a hash
+        const string code = @"
+public class TestClass
+{
+    public void Foo(bool condition)
+    {
+        if (condition)
+        {
+            dynamic value = 1;
+        }
+        else
+        {
+            dynamic value = 1;
+        }
+    }
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Equal(2, results.Count);
+        Assert.NotEqual(results[0].CodeSnippet, results[1].CodeSnippet);
+    }
+
+    [Fact]
+    public void Test_BaselineDoesNotAbsorbNewSiblingBlock()
+    {
+        // Arrange - baseline the if-branch, then add an else-branch with the same statement
+        const string before = @"
+public class TestClass
+{
+    public void Foo(bool condition)
+    {
+        if (condition)
+        {
+            dynamic value = 1;
+        }
+    }
+}";
+        const string after = @"
+public class TestClass
+{
+    public void Foo(bool condition)
+    {
+        if (condition)
+        {
+            dynamic value = 1;
+        }
+        else
+        {
+            dynamic value = 1;
+        }
+    }
+}";
+
+        var baseline = Slopwatch.Baseline.BaselineFile.Create(
+            RunRule(CreateTestContext(before)), "/test");
+
+        // Act
+        var newFindings = RunRule(CreateTestContext(after))
+            .Where(r => !baseline.IsBaselined(r, "/test"))
+            .ToList();
+
+        // Assert - the newly added else-branch must still be reported
+        var finding = Assert.Single(newFindings);
+        Assert.Equal("SW021", finding.RuleId);
+    }
+
     #region Helper Methods
 
     private DetectionContext CreateTestContext(string code)
