@@ -408,6 +408,102 @@ public class GeneratedCodeDetectorTests
         Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Test_AliasShadowsFrameworkImportRegardlessOfOrder(bool aliasFirst)
+    {
+        // The framework import is present, so the file would qualify — but an alias redefines
+        // the name. Directive order must not change the outcome.
+        var directives = aliasFirst
+            ? """
+              using GeneratedCodeAttribute = Acme.MarkerAttribute;
+              using System.CodeDom.Compiler;
+              """
+            : """
+              using System.CodeDom.Compiler;
+              using GeneratedCodeAttribute = Acme.MarkerAttribute;
+              """;
+
+        var content = $$"""
+            {{directives}}
+
+            namespace Acme { public class MarkerAttribute : System.Attribute { } }
+
+            namespace N
+            {
+                [GeneratedCodeAttribute]
+                class HandWritten
+                {
+                    void M() { }
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 12);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Test_ShortenedAliasShadowsFrameworkImportRegardlessOfOrder(bool aliasFirst)
+    {
+        // Same as above, but the alias is named GeneratedCodeAttribute while usage is
+        // shortened to [GeneratedCode].
+        var directives = aliasFirst
+            ? """
+              using GeneratedCodeAttribute = Acme.MarkerAttribute;
+              using System.CodeDom.Compiler;
+              """
+            : """
+              using System.CodeDom.Compiler;
+              using GeneratedCodeAttribute = Acme.MarkerAttribute;
+              """;
+
+        var content = $$"""
+            {{directives}}
+
+            namespace Acme { public class MarkerAttribute : System.Attribute { } }
+
+            namespace N
+            {
+                [GeneratedCode]
+                class HandWritten
+                {
+                    void M() { }
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 12);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
+    public void Test_DetectsWhenFrameworkImportPresentAndNoAlias()
+    {
+        // Control: the same shape without the alias must still be detected.
+        const string content = """
+            using System.CodeDom.Compiler;
+
+            namespace N
+            {
+                [GeneratedCodeAttribute("t","1")]
+                class G
+                {
+                    void M() { }
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 8);
+
+        Assert.True(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
     [Fact]
     public void Test_DetectsDebuggerNonUserCodeWithCorrectNamespace()
     {

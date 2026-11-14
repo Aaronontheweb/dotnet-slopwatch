@@ -446,6 +446,10 @@ public static class GeneratedCodeDetector
             }
 
             // Only using directives in the declaration's lexical scope can bind the name.
+            // Collect all evidence before deciding: an alias anywhere in scope shadows the
+            // framework import regardless of directive order.
+            var hasFrameworkImport = false;
+
             foreach (var scope in declaration.AncestorsAndSelf())
             {
                 if (scope is not BaseNamespaceDeclarationSyntax and not CompilationUnitSyntax)
@@ -455,10 +459,13 @@ public static class GeneratedCodeDetector
 
                 foreach (var directive in GetUsingDirectives(scope))
                 {
-                    // An alias with this name shadows the framework attribute.
                     if (directive.Alias is not null)
                     {
-                        if (string.Equals(directive.Alias.Name.Identifier.ValueText, identifier, StringComparison.Ordinal))
+                        // Attribute usage may omit the "Attribute" suffix, so an alias declared
+                        // as GeneratedCodeAttribute also shadows a [GeneratedCode] usage.
+                        var aliasName = directive.Alias.Name.Identifier.ValueText;
+                        if (string.Equals(aliasName, identifier, StringComparison.Ordinal)
+                            || string.Equals(aliasName, identifier + "Attribute", StringComparison.Ordinal))
                         {
                             return false;
                         }
@@ -469,12 +476,12 @@ public static class GeneratedCodeDetector
                     if (directive.Name is not null
                         && string.Equals(directive.Name.ToString(), requiredNamespace, StringComparison.Ordinal))
                     {
-                        return true;
+                        hasFrameworkImport = true;
                     }
                 }
             }
 
-            return false;
+            return hasFrameworkImport;
         }
 
         private static IEnumerable<UsingDirectiveSyntax> GetUsingDirectives(SyntaxNode scope)
