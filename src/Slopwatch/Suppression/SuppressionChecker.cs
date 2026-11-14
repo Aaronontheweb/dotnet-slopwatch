@@ -64,6 +64,7 @@ public sealed class SuppressionChecker
     {
         var attributeLists = node switch
         {
+            LambdaExpressionSyntax lambda => lambda.AttributeLists,
             BaseTypeDeclarationSyntax typeDecl => typeDecl.AttributeLists,
             MethodDeclarationSyntax methodDecl => methodDecl.AttributeLists,
             PropertyDeclarationSyntax propertyDecl => propertyDecl.AttributeLists,

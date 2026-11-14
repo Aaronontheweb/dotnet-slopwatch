@@ -185,8 +185,7 @@ public class DynamicKeywordSuppressionCompilationTests
     [Fact]
     public void SuppressionOnLambdaIsRecognized()
     {
-        // Arrange - an attributed lambda. This is the one form the rule does not yet
-        // resolve; the test documents the current behavior explicitly.
+        // The lambda attribute is a valid method-target suppression, including its signature.
         const string code = """
             using Slopwatch.Suppression;
             public class C
@@ -199,11 +198,11 @@ public class DynamicKeywordSuppressionCompilationTests
             }
             """;
 
-        // Act
+        Assert.Empty(CompileErrors(code));
+
         var results = RunRule(CreateContext(code));
 
-        // Assert - currently NOT suppressed; tracked as a known gap.
-        Assert.NotEmpty(results);
+        Assert.Empty(results);
     }
 
     #region Helper Methods
