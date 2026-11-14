@@ -138,6 +138,7 @@ slopwatch analyze --stats
 | SW004 | Warning | Arbitrary delays in test code (Task.Delay, Thread.Sleep) |
 | SW005 | Warning | Project file slop (NoWarn, TreatWarningsAsErrors=false) |
 | SW006 | Error | CPM bypass via VersionOverride or inline Version attributes |
+| SW021 | Error | Any use of the `dynamic` keyword |
 
 ## Claude Code Integration
 

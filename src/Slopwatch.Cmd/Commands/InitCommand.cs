@@ -161,6 +161,7 @@ public sealed class InitCommand
         yield return new TimeoutJigglingRule();
         yield return new ProjectFileRule();
         yield return new PackageVersionOverrideRule();
+        yield return new DynamicKeywordRule();
     }
 
     private static bool TryParseSeverity(string severityText, out DetectionSeverity severity)

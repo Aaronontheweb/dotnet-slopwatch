@@ -477,6 +477,7 @@ public sealed class AnalyzeCommand
         yield return new TimeoutJigglingRule();
         yield return new ProjectFileRule();
         yield return new PackageVersionOverrideRule();
+        yield return new DynamicKeywordRule();
     }
 
     private IOutputFormatter CreateOutputFormatter()

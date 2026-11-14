@@ -245,7 +245,7 @@ Bad justifications (will be rejected):
 ### Reviewer Guidelines
 
 For high-risk suppressions:
-- Error-severity rules (SW001, SW003, SW006, SW012, etc.)
+- Error-severity rules (SW001, SW003, SW006, SW012, SW021, etc.)
 - Security-sensitive code
 - Production code suppressions
 
