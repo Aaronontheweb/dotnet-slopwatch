@@ -365,17 +365,29 @@ public static class GeneratedCodeDetector
 
         var qualified = name.ToString();
         const string globalPrefix = "global::";
-        if (qualified.StartsWith(globalPrefix, StringComparison.Ordinal))
+        var isGlobalQualified = qualified.StartsWith(globalPrefix, StringComparison.Ordinal);
+        if (isGlobalQualified)
         {
             qualified = qualified.Substring(globalPrefix.Length);
         }
 
         foreach (var attributeName in QualifiedGeneratedCodeAttributeNames)
         {
-            if (string.Equals(qualified, attributeName, StringComparison.Ordinal))
+            if (!string.Equals(qualified, attributeName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // A global:: qualifier binds to the framework type unconditionally.
+            if (isGlobalQualified)
             {
                 return true;
             }
+
+            // Without global::, the leading identifier is resolved like any other name: a using
+            // alias or a locally declared namespace of the same name can redirect it. Require
+            // that the first segment is not shadowed.
+            return imports is not null && imports.IsRootNamespaceUnshadowed(qualified, declaration);
         }
 
         return false;
@@ -492,6 +504,100 @@ public static class GeneratedCodeDetector
                 BaseNamespaceDeclarationSyntax namespaceDeclaration => namespaceDeclaration.Usings,
                 _ => Enumerable.Empty<UsingDirectiveSyntax>()
             };
+        }
+
+        /// <summary>
+        /// Determines whether the root segment of a qualified name still binds to the global
+        /// namespace of that name.
+        /// </summary>
+        /// <param name="qualifiedName">The qualified name, without a <c>global::</c> prefix.</param>
+        /// <param name="declaration">The declaration the attribute is applied to.</param>
+        /// <remarks>
+        /// A qualified name such as <c>System.CodeDom.Compiler.GeneratedCode</c> resolves its
+        /// first segment like any other identifier. A <c>using System = Acme;</c> alias, or a
+        /// namespace declared as <c>App.System</c> in scope, redirects it to a different type.
+        /// </remarks>
+        public bool IsRootNamespaceUnshadowed(string qualifiedName, SyntaxNode declaration)
+        {
+            var separatorIndex = qualifiedName.IndexOf('.');
+            if (separatorIndex <= 0)
+            {
+                return false;
+            }
+
+            var rootSegment = qualifiedName.Substring(0, separatorIndex);
+
+            // Collect every namespace declared in this file.
+            var declaredNamespaces = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var namespaceDeclaration in declaration.SyntaxTree!.GetRoot()
+                         .DescendantNodes()
+                         .OfType<BaseNamespaceDeclarationSyntax>())
+            {
+                declaredNamespaces.Add(namespaceDeclaration.Name.ToString());
+            }
+
+            // C# resolves the root segment by walking outward from the enclosing namespace: inside
+            // 'namespace App', the name 'System' binds to 'App.System' when that namespace exists.
+            // Declaring 'App.System.CodeDom.Compiler' implicitly declares 'App.System' too, so a
+            // prefix match counts.
+            foreach (var enclosingNamespace in GetEnclosingNamespaces(declaration))
+            {
+                var candidate = enclosingNamespace.Length == 0
+                    ? rootSegment
+                    : enclosingNamespace + "." + rootSegment;
+
+                foreach (var declared in declaredNamespaces)
+                {
+                    if (string.Equals(declared, candidate, StringComparison.Ordinal)
+                        || declared.StartsWith(candidate + ".", StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            // A using alias with this name redirects the root segment.
+            foreach (var scope in declaration.AncestorsAndSelf())
+            {
+                if (scope is not BaseNamespaceDeclarationSyntax and not CompilationUnitSyntax)
+                {
+                    continue;
+                }
+
+                foreach (var directive in GetUsingDirectives(scope))
+                {
+                    if (directive.Alias is not null
+                        && string.Equals(directive.Alias.Name.Identifier.ValueText, rootSegment, StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Gets the enclosing namespace names of a declaration, outermost first, including the
+        /// empty global namespace.
+        /// </summary>
+        private static IEnumerable<string> GetEnclosingNamespaces(SyntaxNode declaration)
+        {
+            var names = new List<string>();
+
+            foreach (var ancestor in declaration.Ancestors())
+            {
+                if (ancestor is BaseNamespaceDeclarationSyntax namespaceDeclaration)
+                {
+                    names.Add(namespaceDeclaration.Name.ToString());
+                }
+            }
+
+            // Outermost first, then the global namespace.
+            names.Reverse();
+            names.Add(string.Empty);
+
+            return names;
         }
 
         /// <summary>

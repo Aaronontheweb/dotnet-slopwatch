@@ -216,7 +216,7 @@ The attribute check is per-type rather than per-file: a hand-written type in a f
 Two deliberate deviations from Roslyn, both conservative (a file is analyzed rather than skipped):
 
 - A `partial` type is never treated as generated, even when its only declaration carries the attribute.
-- Attribute identity is resolved from syntax alone: a qualified name must match `System.CodeDom.Compiler.GeneratedCode` or `System.Diagnostics.DebuggerNonUserCode` exactly, and an unqualified name is accepted only when the declaring namespace is imported in the attribute's lexical scope with no shadowing alias or local type.
+- Attribute identity is resolved from syntax alone: a `global::`-qualified name binds to the framework type unconditionally, while any other name must survive shadowing checks — an unqualified name needs its declaring namespace imported in the attribute's lexical scope with no shadowing alias or local type, and a qualified name needs its root segment unshadowed by a `using` alias or a namespace declared in scope.
 
 Configure the behavior in `.slopwatch/config.json`:
 

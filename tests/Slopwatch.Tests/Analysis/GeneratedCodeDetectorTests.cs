@@ -526,6 +526,106 @@ public class GeneratedCodeDetectorTests
     }
 
     [Fact]
+    public void Test_DoesNotDetectQualifiedNameWithShadowedRootNamespace()
+    {
+        // 'using System = Acme;' redirects the root segment, so the attribute resolves to
+        // Acme.CodeDom.Compiler.GeneratedCodeAttribute rather than the framework type.
+        const string content = """
+            namespace App
+            {
+                using System = Acme;
+
+                [System.CodeDom.Compiler.GeneratedCode]
+                class HandWritten
+                {
+                    void M() { }
+                }
+            }
+
+            namespace Acme.CodeDom.Compiler
+            {
+                public class GeneratedCodeAttribute : global::System.Attribute { }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 6);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
+    public void Test_DoesNotDetectQualifiedNameWithLocallyDeclaredRootNamespace()
+    {
+        // A namespace declared as App.System shadows the global System namespace.
+        const string content = """
+            namespace App
+            {
+                [System.CodeDom.Compiler.GeneratedCode]
+                class HandWritten
+                {
+                    void M() { }
+                }
+            }
+
+            namespace App.System.CodeDom.Compiler
+            {
+                public class GeneratedCodeAttribute : global::System.Attribute { }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 4);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
+    public void Test_DetectsGlobalQualifiedName()
+    {
+        // global:: binds to the framework type unconditionally.
+        const string content = """
+            namespace App
+            {
+                using System = Acme;
+
+                [global::System.CodeDom.Compiler.GeneratedCode("t","1")]
+                class G
+                {
+                    void M() { }
+                }
+            }
+
+            namespace Acme.CodeDom.Compiler
+            {
+                public class GeneratedCodeAttribute : global::System.Attribute { }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 6);
+
+        Assert.True(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
+    public void Test_DetectsPlainQualifiedNameWithoutShadowing()
+    {
+        // Control: no alias or local namespace shadows the root segment.
+        const string content = """
+            namespace App
+            {
+                [System.CodeDom.Compiler.GeneratedCode("t","1")]
+                class G
+                {
+                    void M() { }
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 4);
+
+        Assert.True(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
     public void Test_DoesNotDetectUnrelatedQualifiedGeneratedCodeAttribute()
     {
         // Acme.GeneratedCodeAttribute is a different attribute from
