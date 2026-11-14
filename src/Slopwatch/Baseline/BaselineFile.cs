@@ -220,11 +220,15 @@ public sealed class BaselineFile
     /// <param name="rootDirectory">Root directory for computing relative paths</param>
     /// <param name="scannedFiles">Optional list of files included in the current scan;
     /// only entries for these files are considered for stale removal.</param>
+    /// <param name="skippedFiles">Optional list of files that were present in the scan but
+    /// deliberately not analyzed (for example, generated code). Entries for these files are
+    /// never removed, so changing the analysis configuration later does not resurface findings.</param>
     /// <returns>Tuple of (removed, added, kept) counts</returns>
     public (int removed, int added, int kept) SyncWithDetections(
         IEnumerable<DetectionResult> results,
         string rootDirectory,
-        IEnumerable<string>? scannedFiles = null)
+        IEnumerable<string>? scannedFiles = null,
+        IEnumerable<string>? skippedFiles = null)
     {
         // Build a set of all current hashes from the detection results
         var currentHashes = new HashSet<string>();
@@ -250,6 +254,20 @@ public sealed class BaselineFile
             }
         }
 
+        HashSet<string>? skippedFilePaths = null;
+        if (skippedFiles is not null)
+        {
+            var normalizedSkippedPaths = skippedFiles
+                .Select(path => GetRelativePath(path, rootDirectory))
+                .Select(path => path.Replace('\\', '/'))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (normalizedSkippedPaths.Count > 0)
+            {
+                skippedFilePaths = normalizedSkippedPaths;
+            }
+        }
+
         var removed = 0;
         var kept = 0;
 
@@ -258,6 +276,14 @@ public sealed class BaselineFile
         {
             if (scopedFilePaths is not null && !scopedFilePaths.Contains(e.FilePath))
             {
+                return false;
+            }
+
+            // Files that were skipped rather than analyzed keep their entries: the absence of
+            // findings reflects the configuration, not a fix.
+            if (skippedFilePaths is not null && skippedFilePaths.Contains(e.FilePath))
+            {
+                kept++;
                 return false;
             }
 

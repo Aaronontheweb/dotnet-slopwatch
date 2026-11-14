@@ -312,6 +312,50 @@ public class BaselineFileTests
         Assert.Contains(baseline.Entries, e => e.FilePath == "src/B.cs" && e.CodeSnippet == "keep-b");
     }
 
+    [Fact]
+    public void SyncWithDetections_PreservesEntriesForSkippedFiles()
+    {
+        // A generated file that is skipped rather than analyzed must keep its baseline entries,
+        // otherwise flipping generatedCode.mode back to "analyze" resurfaces a wall of findings.
+        var baseline = new BaselineFile();
+        var generatedFile = CreateResult("SW001", "/root/src/Model.g.cs", 10, "generated-snippet");
+        var handWrittenFile = CreateResult("SW001", "/root/src/A.cs", 20, "old-a");
+        baseline.AddEntry(generatedFile, "/root");
+        baseline.AddEntry(handWrittenFile, "/root");
+
+        var currentResults = Array.Empty<DetectionResult>();
+
+        var (removed, added, kept) = baseline.SyncWithDetections(
+            currentResults,
+            "/root",
+            new[] { "/root/src/Model.g.cs", "/root/src/A.cs" },
+            new[] { "/root/src/Model.g.cs" });
+
+        Assert.Equal(1, removed);
+        Assert.Equal(0, added);
+        Assert.Equal(1, kept);
+        Assert.Single(baseline.Entries);
+        Assert.Contains(baseline.Entries, e => e.FilePath == "src/Model.g.cs");
+    }
+
+    [Fact]
+    public void SyncWithDetections_WithoutSkippedFilesRemovesGeneratedEntries()
+    {
+        // Control case: without the skipped-file set, the same scan prunes the entry.
+        var baseline = new BaselineFile();
+        baseline.AddEntry(CreateResult("SW001", "/root/src/Model.g.cs", 10, "generated-snippet"), "/root");
+
+        var (removed, added, kept) = baseline.SyncWithDetections(
+            Array.Empty<DetectionResult>(),
+            "/root",
+            new[] { "/root/src/Model.g.cs" });
+
+        Assert.Equal(1, removed);
+        Assert.Equal(0, added);
+        Assert.Equal(0, kept);
+        Assert.Empty(baseline.Entries);
+    }
+
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
     {
         foreach (var item in source)

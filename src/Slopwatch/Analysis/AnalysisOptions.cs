@@ -57,6 +57,16 @@ public sealed class AnalysisOptions
     };
 
     /// <summary>
+    /// Gets or sets how files that declare themselves generated are treated.
+    /// </summary>
+    /// <remarks>
+    /// Default is <see cref="GeneratedCodeMode.Skip"/>. Generated files are identified by
+    /// filename convention, an <c>&lt;auto-generated&gt;</c> header comment, or a
+    /// <c>[GeneratedCode]</c> attribute on the enclosing type.
+    /// </remarks>
+    public GeneratedCodeMode GeneratedCodeMode { get; set; } = GeneratedCodeMode.Skip;
+
+    /// <summary>
     /// Gets or sets the patterns used to identify test files.
     /// </summary>
     /// <remarks>

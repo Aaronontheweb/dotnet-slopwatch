@@ -34,5 +34,11 @@
       "justification": "Integration test project uses real async coordination and timing delays to validate rate limiter behavior",
       "issueUrl": "https://github.com/org/repo/issues/123"
     }
-  ]
+  ],
+
+  // Controls how files that declare themselves generated are treated.
+  // Modes: "skip" (default), "analyze", "analyzeAndReport"
+  "generatedCode": {
+    "mode": "skip"
+  }
 }

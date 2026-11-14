@@ -30,6 +30,10 @@ namespace Slopwatch.Detection;
 /// <param name="SuggestedFix">
 /// Optional suggestion for how to fix the detected issue.
 /// </param>
+/// <param name="IsGeneratedCode">
+/// Indicates whether the finding came from a file that declares itself generated.
+/// Only set when <see cref="Analysis.GeneratedCodeMode.AnalyzeAndReport"/> is active.
+/// </param>
 public sealed record DetectionResult(
     string RuleId,
     string RuleName,
@@ -39,7 +43,8 @@ public sealed record DetectionResult(
     int Column,
     string Message,
     string? CodeSnippet = null,
-    string? SuggestedFix = null
+    string? SuggestedFix = null,
+    bool IsGeneratedCode = false
 )
 {
     /// <summary>
