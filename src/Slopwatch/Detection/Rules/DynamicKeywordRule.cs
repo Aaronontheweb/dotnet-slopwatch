@@ -43,6 +43,12 @@ namespace Slopwatch.Detection.Rules;
 /// dynamic-typed slot, so they have no runtime effect.
 /// </description></item>
 /// <item><description>
+/// A using directive's name is a namespace-or-type reference, not a slot: <c>using dynamic;</c>
+/// imports a namespace named <c>dynamic</c> and <c>using static dynamic;</c> imports a type of
+/// that name. An alias target is <em>not</em> excluded — <c>using D = dynamic;</c> aliases the
+/// builtin type and is still flagged.
+/// </description></item>
+/// <item><description>
 /// A user-defined type literally named <c>dynamic</c> is flagged. This is an accepted false
 /// positive: without a semantic model the rule cannot distinguish it, and banning the name is
 /// consistent with the rule's intent.
@@ -190,6 +196,22 @@ public sealed class DynamicKeywordRule : IDetectionRule
         // type called `dynamic`, not the builtin contextual keyword. The keyword can never be
         // qualified.
         if (identifier.Parent is QualifiedNameSyntax or AliasQualifiedNameSyntax)
+            return false;
+
+        // A using directive's name is a namespace-or-type *reference*, never a dynamic-typed
+        // slot. `using dynamic;` imports a namespace called `dynamic`; `using static dynamic;`
+        // imports a type of that name. Neither can bind to the builtin keyword — `using static
+        // dynamic;` on its own is CS0246 — so both are name references, not slots.
+        //
+        // The one exception is an alias target: `using D = dynamic;` aliases the builtin type
+        // and is a genuine dynamic slot, so the exclusion applies only when the directive has
+        // no alias.
+        //
+        // This is a direct-parent test, not a walk up the ancestor chain. A chain walk would
+        // also swallow `using D = List<dynamic>;`, whose type argument is a real dynamic slot.
+        // It stays a single stable grammar node rather than the first arm of a growing switch:
+        // the total `SyntaxFacts` fallback below still answers every other case.
+        if (identifier.Parent is UsingDirectiveSyntax { Alias: null })
             return false;
 
         return SyntaxFacts.IsInNamespaceOrTypeContext(identifier);
