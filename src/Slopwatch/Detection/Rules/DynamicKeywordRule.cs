@@ -257,44 +257,77 @@ public sealed class DynamicKeywordRule : IDetectionRule
     }
 
     /// <summary>
-    /// Gets a stable name for the member enclosing a scope, used to disambiguate snippets.
+    /// Gets a stable, unique name for the member enclosing a scope, used to disambiguate snippets.
     /// </summary>
+    /// <remarks>
+    /// The name alone is not enough: overloads (<c>M()</c> and <c>M(int)</c>), same-named members
+    /// in different types, and same-named local functions under different methods all collide.
+    /// The qualifier therefore includes the containing type chain and, for callables, the
+    /// parameter type list.
+    /// </remarks>
     private static string? FindEnclosingMemberName(SyntaxNode scope)
     {
         for (var current = scope; current is not null; current = current.Parent)
         {
-            switch (current)
+            var memberName = current switch
             {
-                case MethodDeclarationSyntax m:
-                    return m.Identifier.ValueText;
-                case ConstructorDeclarationSyntax c:
-                    return c.Identifier.ValueText;
-                case DestructorDeclarationSyntax d:
-                    return "~" + d.Identifier.ValueText;
-                case PropertyDeclarationSyntax p:
-                    return p.Identifier.ValueText;
-                case IndexerDeclarationSyntax:
-                    return "this[]";
-                case EventDeclarationSyntax e:
-                    return e.Identifier.ValueText;
-                case EventFieldDeclarationSyntax ef:
-                    return string.Join(",", ef.Declaration.Variables.Select(v => v.Identifier.ValueText));
-                case FieldDeclarationSyntax f:
-                    return string.Join(",", f.Declaration.Variables.Select(v => v.Identifier.ValueText));
-                case OperatorDeclarationSyntax o:
-                    return "operator " + o.OperatorToken.ValueText;
-                case ConversionOperatorDeclarationSyntax co:
-                    return "operator " + co.Type.ToString();
-                case LocalFunctionStatementSyntax lf:
-                    return lf.Identifier.ValueText;
-                case BaseTypeDeclarationSyntax t:
-                    return t.Identifier.ValueText;
-                case DelegateDeclarationSyntax dd:
-                    return dd.Identifier.ValueText;
-            }
+                MethodDeclarationSyntax m => $"{m.Identifier.ValueText}({ParameterTypes(m.ParameterList)})",
+                ConstructorDeclarationSyntax c => $"{c.Identifier.ValueText}({ParameterTypes(c.ParameterList)})",
+                DestructorDeclarationSyntax d => "~" + d.Identifier.ValueText,
+                PropertyDeclarationSyntax p => p.Identifier.ValueText,
+                IndexerDeclarationSyntax i => $"this[{ParameterTypes(i.ParameterList)}]",
+                EventDeclarationSyntax e => e.Identifier.ValueText,
+                EventFieldDeclarationSyntax ef => string.Join(",", ef.Declaration.Variables.Select(v => v.Identifier.ValueText)),
+                FieldDeclarationSyntax f => string.Join(",", f.Declaration.Variables.Select(v => v.Identifier.ValueText)),
+                OperatorDeclarationSyntax o => $"operator {o.OperatorToken.ValueText}({ParameterTypes(o.ParameterList)})",
+                ConversionOperatorDeclarationSyntax co => $"operator {co.Type}({ParameterTypes(co.ParameterList)})",
+                LocalFunctionStatementSyntax lf => $"{lf.Identifier.ValueText}({ParameterTypes(lf.ParameterList)})",
+                BaseTypeDeclarationSyntax t => t.Identifier.ValueText,
+                DelegateDeclarationSyntax dd => $"{dd.Identifier.ValueText}({ParameterTypes(dd.ParameterList)})",
+                _ => null
+            };
+
+            if (memberName is null)
+                continue;
+
+            // Prefix the containing type chain so same-named members in different (including
+            // nested) types stay distinct.
+            var typeChain = BuildTypeChain(current);
+            return typeChain is null ? memberName : $"{typeChain}.{memberName}";
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Builds a dotted chain of the types enclosing a member, outermost first.
+    /// </summary>
+    private static string? BuildTypeChain(SyntaxNode member)
+    {
+        var names = new List<string>();
+
+        for (var current = member.Parent; current is not null; current = current.Parent)
+        {
+            if (current is BaseTypeDeclarationSyntax type)
+                names.Add(type.Identifier.ValueText);
+        }
+
+        if (names.Count == 0)
+            return null;
+
+        names.Reverse();
+        return string.Join(".", names);
+    }
+
+    /// <summary>
+    /// Renders a parameter list as a comma-separated list of parameter types.
+    /// </summary>
+    private static string ParameterTypes(BaseParameterListSyntax? parameters)
+    {
+        if (parameters is null || parameters.Parameters.Count == 0)
+            return string.Empty;
+
+        return string.Join(",", parameters.Parameters.Select(p => p.Type?.ToString() ?? "?"));
     }
 
     /// <summary>

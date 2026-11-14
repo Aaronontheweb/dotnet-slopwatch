@@ -1256,7 +1256,7 @@ public dynamic ProcessOrder(dynamic request)
 
 **Suppression**:
 ```csharp
-[SlopwatchSuppress("SW021", "COM interop requires late-bound dispatch on this boundary")]
+[SlopwatchSuppress("SW021", "COM interop requires late-bound dispatch on this boundary", "Interop")]
 public void InvokeExcel(dynamic workbook) { ... }
 ```
 

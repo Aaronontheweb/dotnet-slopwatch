@@ -789,6 +789,102 @@ public class TestClass
         Assert.Empty(results);
     }
 
+    [Fact]
+    public void Test_OverloadsProduceDistinctSnippets()
+    {
+        // Arrange - overloads with identical bodies must not share a baseline hash
+        const string code = @"
+public class TestClass
+{
+    public void M()
+    {
+        dynamic x = 1;
+    }
+
+    public void M(int arg)
+    {
+        dynamic x = 1;
+    }
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Equal(2, results.Count);
+        Assert.NotEqual(results[0].CodeSnippet, results[1].CodeSnippet);
+    }
+
+    [Fact]
+    public void Test_SameNamedMembersInDifferentTypesProduceDistinctSnippets()
+    {
+        // Arrange
+        const string code = @"
+public class A
+{
+    public void M()
+    {
+        dynamic x = 1;
+    }
+}
+
+public class B
+{
+    public void M()
+    {
+        dynamic x = 1;
+    }
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Equal(2, results.Count);
+        Assert.NotEqual(results[0].CodeSnippet, results[1].CodeSnippet);
+    }
+
+    [Fact]
+    public void Test_BaselineDoesNotAbsorbNewOverload()
+    {
+        // Arrange - baseline the single-overload version, then add an overload
+        const string before = @"
+public class TestClass
+{
+    public void M()
+    {
+        dynamic x = 1;
+    }
+}";
+        const string after = @"
+public class TestClass
+{
+    public void M()
+    {
+        dynamic x = 1;
+    }
+
+    public void M(int arg)
+    {
+        dynamic x = 1;
+    }
+}";
+
+        var baseline = Slopwatch.Baseline.BaselineFile.Create(
+            RunRule(CreateTestContext(before)), "/test");
+
+        // Act
+        var newFindings = RunRule(CreateTestContext(after))
+            .Where(r => !baseline.IsBaselined(r, "/test"))
+            .ToList();
+
+        // Assert - the newly added overload must still be reported
+        var finding = Assert.Single(newFindings);
+        Assert.Equal("SW021", finding.RuleId);
+    }
+
     #region Helper Methods
 
     private DetectionContext CreateTestContext(string code)
