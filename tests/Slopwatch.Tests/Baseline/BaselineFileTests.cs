@@ -356,6 +356,31 @@ public class BaselineFileTests
         Assert.Empty(baseline.Entries);
     }
 
+    [Fact]
+    public void SyncWithDetections_PreservesOnlySkippedResultsForPartiallyAnalyzedFiles()
+    {
+        // A file can contain both a generated type and a hand-written type. Only the filtered
+        // generated finding should be preserved; a fixed hand-written finding must still be pruned.
+        var baseline = new BaselineFile();
+        var generatedFinding = CreateResult("SW003", "/root/src/Mixed.cs", 10, "generated-catch");
+        var fixedHandWrittenFinding = CreateResult("SW003", "/root/src/Mixed.cs", 40, "fixed-catch");
+        baseline.AddEntry(generatedFinding, "/root");
+        baseline.AddEntry(fixedHandWrittenFinding, "/root");
+
+        var (removed, added, kept) = baseline.SyncWithDetections(
+            Array.Empty<DetectionResult>(),
+            "/root",
+            new[] { "/root/src/Mixed.cs" },
+            skippedFiles: null,
+            skippedResults: new[] { generatedFinding });
+
+        Assert.Equal(1, removed);
+        Assert.Equal(0, added);
+        Assert.Equal(1, kept);
+        Assert.Single(baseline.Entries);
+        Assert.Contains(baseline.Entries, e => e.CodeSnippet == "generated-catch");
+    }
+
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
     {
         foreach (var item in source)

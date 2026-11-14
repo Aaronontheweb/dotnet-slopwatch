@@ -223,12 +223,16 @@ public sealed class BaselineFile
     /// <param name="skippedFiles">Optional list of files that were present in the scan but
     /// deliberately not analyzed (for example, generated code). Entries for these files are
     /// never removed, so changing the analysis configuration later does not resurface findings.</param>
+    /// <param name="skippedResults">Optional list of individual findings that were filtered out
+    /// because they fell inside a generated type. Only these entries are preserved; other entries
+    /// for the same file are still pruned when they no longer reproduce.</param>
     /// <returns>Tuple of (removed, added, kept) counts</returns>
     public (int removed, int added, int kept) SyncWithDetections(
         IEnumerable<DetectionResult> results,
         string rootDirectory,
         IEnumerable<string>? scannedFiles = null,
-        IEnumerable<string>? skippedFiles = null)
+        IEnumerable<string>? skippedFiles = null,
+        IEnumerable<DetectionResult>? skippedResults = null)
     {
         // Build a set of all current hashes from the detection results
         var currentHashes = new HashSet<string>();
@@ -238,6 +242,18 @@ public sealed class BaselineFile
             var codeSnippet = result.CodeSnippet ?? string.Empty;
             var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
             currentHashes.Add(hash);
+        }
+
+        // Findings filtered out as generated are treated as still present, so their entries
+        // survive the prune without preserving unrelated entries for the same file.
+        if (skippedResults is not null)
+        {
+            foreach (var result in skippedResults)
+            {
+                var relativePath = GetRelativePath(result.FilePath, rootDirectory);
+                var codeSnippet = result.CodeSnippet ?? string.Empty;
+                currentHashes.Add(BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet));
+            }
         }
 
         HashSet<string>? scopedFilePaths = null;

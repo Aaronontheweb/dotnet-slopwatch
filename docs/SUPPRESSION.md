@@ -213,6 +213,11 @@ These match the signals Roslyn's own analyzers use, so slopwatch skips what the 
 
 The attribute check is per-type rather than per-file: a hand-written type in a file that also contains a generated type is still analyzed. Partial types are treated as hand-written, matching Roslyn's behavior — the attribute may live on a different declaration, and resolving that requires a compilation.
 
+Two deliberate deviations from Roslyn, both conservative (a file is analyzed rather than skipped):
+
+- A `partial` type is never treated as generated, even when its only declaration carries the attribute.
+- Qualified attribute names must match `System.CodeDom.Compiler.GeneratedCode` or `System.Diagnostics.DebuggerNonUserCode` exactly. An unrelated attribute such as `Acme.GeneratedCode` does not cause a skip.
+
 Configure the behavior in `.slopwatch/config.json`:
 
 ```json
@@ -232,6 +237,8 @@ Configure the behavior in `.slopwatch/config.json`:
 ### Interaction with baselines
 
 Baseline entries for skipped files are preserved during `--update-baseline`. Without this, switching to `skip` would silently delete those entries, and switching back to `analyze` would resurface every finding at once.
+
+Preservation is scoped to what was actually skipped. A file skipped entirely keeps all of its entries. A file that was analyzed but had individual findings filtered out as generated keeps only those entries — a fixed hand-written finding in the same file is still pruned.
 
 ## Suppression Priority
 

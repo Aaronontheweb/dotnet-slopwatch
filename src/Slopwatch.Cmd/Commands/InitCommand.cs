@@ -28,6 +28,9 @@ public sealed class InitCommand
     [Option("min-severity", HelpText = "Minimum severity to baseline: info, warning, error (default: info)")]
     public string MinSeverity { get; set; } = "info";
 
+    [Option('c', "config", HelpText = "Path to a custom .slopwatch/config.json file")]
+    public string? ConfigFile { get; set; }
+
     /// <summary>
     /// Executes the init command.
     /// </summary>
@@ -84,6 +87,19 @@ public sealed class InitCommand
                 var excludeList = options.ExcludePatterns.ToList();
                 excludeList.AddRange(Exclude);
                 options.ExcludePatterns = excludeList;
+            }
+
+            // Apply the generatedCode section from the config file, if present. init must honor
+            // the same mode as analyze, otherwise the baseline it creates disagrees with the
+            // findings the next analyze run reports.
+            var config = await Configuration.SlopwatchConfigLoader.LoadAsync(
+                rootDirectory,
+                ConfigFile,
+                cancellationToken);
+
+            if (config?.GeneratedCode is not null)
+            {
+                options.GeneratedCodeMode = config.GeneratedCode.Mode;
             }
 
             // Create all detection rules

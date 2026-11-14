@@ -245,6 +245,11 @@ A file counts as generated when any of these is true:
 
 These are the same signals Roslyn's own analyzers use, so slopwatch skips what the compiler skips. The attribute check is per-type, so a hand-written type in a file that also contains a generated type is still analyzed. Partial types are treated as hand-written, matching Roslyn's behavior.
 
+Two deliberate deviations from Roslyn, both in the conservative direction (a file is analyzed rather than skipped):
+
+- A `partial` type is never treated as generated, even when its only declaration carries the attribute. The attribute may live on a declaration in another file, and resolving that requires a compilation.
+- An attribute referenced through a `using` alias is not recognized. Qualified names must match `System.CodeDom.Compiler.GeneratedCode` or `System.Diagnostics.DebuggerNonUserCode` exactly, so an unrelated attribute such as `Acme.GeneratedCode` does not cause a skip.
+
 Control this with the `generatedCode` section in `.slopwatch/config.json`:
 
 ```json

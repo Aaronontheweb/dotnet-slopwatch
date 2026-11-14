@@ -411,7 +411,8 @@ public sealed class AnalyzeCommand
             allResults,
             rootDirectory,
             scannedFiles,
-            analyzer.SkippedGeneratedFiles);
+            analyzer.SkippedGeneratedFiles,
+            analyzer.SkippedGeneratedResults);
 
         if (removed > 0 || added > 0)
         {
