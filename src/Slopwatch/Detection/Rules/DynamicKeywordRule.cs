@@ -175,6 +175,12 @@ public sealed class DynamicKeywordRule : IDetectionRule
         if (IsInExcludedContext(identifier))
             return false;
 
+        // A qualified name (`N.dynamic`, `global::dynamic`, `X::dynamic`) refers to a named
+        // type called `dynamic`, not the builtin contextual keyword. The keyword can never be
+        // qualified.
+        if (identifier.Parent is QualifiedNameSyntax or AliasQualifiedNameSyntax)
+            return false;
+
         return SyntaxFacts.IsInNamespaceOrTypeContext(identifier);
     }
 

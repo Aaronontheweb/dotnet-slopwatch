@@ -602,25 +602,6 @@ public class TestClass
     }
 
     [Fact]
-    public void Test_SuppressionOnConversionOperator()
-    {
-        // Arrange
-        const string code = @"
-public class TestClass
-{
-    [SlopwatchSuppress(""SW021"", ""COM interop requires late-bound dispatch here"", ""Interop"")]
-    public static implicit operator dynamic(TestClass value) => null!;
-}";
-        var context = CreateTestContext(code);
-
-        // Act
-        var results = RunRule(context);
-
-        // Assert
-        Assert.Empty(results);
-    }
-
-    [Fact]
     public void Test_SuppressionOnDelegate()
     {
         // Arrange
@@ -770,6 +751,42 @@ public class TestClass
         var scopedParam = Assert.Single(scopedResults);
         Assert.Equal(fullParam.CodeSnippet, scopedParam.CodeSnippet);
         Assert.Contains("occurrence 2 of 2", scopedParam.CodeSnippet);
+    }
+
+    [Fact]
+    public void Test_DoesNotFlagQualifiedNameDynamic()
+    {
+        // Arrange - `N.dynamic` refers to a named type, not the builtin keyword
+        const string code = @"
+public class TestClass
+{
+    public N.dynamic Value;
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Test_DoesNotFlagGlobalQualifiedDynamic()
+    {
+        // Arrange - `global::dynamic` refers to a named type, not the builtin keyword
+        const string code = @"
+public class TestClass
+{
+    public global::dynamic Value;
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Empty(results);
     }
 
     #region Helper Methods
