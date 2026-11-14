@@ -656,6 +656,29 @@ public class TestClass
         Assert.Empty(results);
     }
 
+    [Fact]
+    public void Test_DetectsDynamicLambdaReturnType()
+    {
+        // Arrange
+        const string code = @"
+public class TestClass
+{
+    public void Run()
+    {
+        var factory = static dynamic () => null;
+    }
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal("SW021", result.RuleId);
+        Assert.Equal(6, result.LineNumber);
+    }
+
     #region Helper Methods
 
     private DetectionContext CreateTestContext(string code)

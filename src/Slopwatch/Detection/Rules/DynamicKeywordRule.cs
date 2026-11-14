@@ -189,6 +189,9 @@ public sealed class DynamicKeywordRule : IDetectionRule
             PointerTypeSyntax p => p.ElementType == identifier,
             FunctionPointerParameterSyntax f => f.Type == identifier,
 
+            // Explicit lambda return type: `dynamic () => null`
+            ParenthesizedLambdaExpressionSyntax l => l.ReturnType == identifier,
+
             // using aliases: `using D = dynamic;` and `using static dynamic;`
             UsingDirectiveSyntax u => u.Alias?.Name == identifier || u.Name == identifier,
 
