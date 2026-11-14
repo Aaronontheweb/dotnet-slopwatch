@@ -329,7 +329,8 @@ public class BaselineFileTests
             currentResults,
             "/root",
             new[] { "/root/src/Model.g.cs", "/root/src/A.cs" },
-            new[] { "/root/src/Model.g.cs" });
+            new[] { "/root/src/Model.g.cs" },
+            skippedResults: null);
 
         Assert.Equal(1, removed);
         Assert.Equal(0, added);
@@ -379,6 +380,50 @@ public class BaselineFileTests
         Assert.Equal(1, kept);
         Assert.Single(baseline.Entries);
         Assert.Contains(baseline.Entries, e => e.CodeSnippet == "generated-catch");
+    }
+
+    [Fact]
+    public void SyncWithDetections_DoesNotShieldCollidingSnippetAtDifferentLine()
+    {
+        // Two identical snippets in different types produce the same hash. A skipped generated
+        // finding must not preserve a stale hand-written entry that happens to share the snippet.
+        var baseline = new BaselineFile();
+        var staleHandWritten = CreateResult("SW003", "/root/src/Mixed.cs", 40, "catch {}");
+        baseline.AddEntry(staleHandWritten, "/root");
+
+        var skippedGenerated = CreateResult("SW003", "/root/src/Mixed.cs", 10, "catch {}");
+
+        var (removed, added, kept) = baseline.SyncWithDetections(
+            Array.Empty<DetectionResult>(),
+            "/root",
+            new[] { "/root/src/Mixed.cs" },
+            skippedFiles: null,
+            skippedResults: new[] { skippedGenerated });
+
+        Assert.Equal(1, removed);
+        Assert.Equal(0, added);
+        Assert.Equal(0, kept);
+        Assert.Empty(baseline.Entries);
+    }
+
+    [Fact]
+    public void SyncWithDetections_PreservesSkippedEntryAtMatchingLine()
+    {
+        var baseline = new BaselineFile();
+        var skippedGenerated = CreateResult("SW003", "/root/src/Mixed.cs", 10, "catch {}");
+        baseline.AddEntry(skippedGenerated, "/root");
+
+        var (removed, added, kept) = baseline.SyncWithDetections(
+            Array.Empty<DetectionResult>(),
+            "/root",
+            new[] { "/root/src/Mixed.cs" },
+            skippedFiles: null,
+            skippedResults: new[] { skippedGenerated });
+
+        Assert.Equal(0, removed);
+        Assert.Equal(0, added);
+        Assert.Equal(1, kept);
+        Assert.Single(baseline.Entries);
     }
 
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)

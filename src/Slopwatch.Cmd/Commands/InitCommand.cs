@@ -102,6 +102,27 @@ public sealed class InitCommand
                 options.GeneratedCodeMode = config.GeneratedCode.Mode;
             }
 
+            // Forward the config path to suppression checking as well, so suppressions from the
+            // selected config apply during init exactly as they do during analyze.
+            if (!string.IsNullOrWhiteSpace(ConfigFile))
+            {
+                var resolvedConfigPath = Path.IsPathRooted(ConfigFile)
+                    ? ConfigFile
+                    : Path.GetFullPath(Path.Combine(rootDirectory, ConfigFile));
+
+                if (!File.Exists(resolvedConfigPath))
+                {
+                    await Console.Error.WriteLineAsync($"Configuration file not found: {resolvedConfigPath}");
+                    return 2;
+                }
+
+                Suppression.SuppressionChecker.SetConfigPathOverride(resolvedConfigPath);
+            }
+            else
+            {
+                Suppression.SuppressionChecker.SetConfigPathOverride(null);
+            }
+
             // Create all detection rules
             var rules = CreateDetectionRules();
             var analyzer = new FileAnalyzer(rules, options);
@@ -166,6 +187,10 @@ public sealed class InitCommand
         {
             await Console.Error.WriteLineAsync($"Error during initialization: {ex.Message}");
             return 2;
+        }
+        finally
+        {
+            Suppression.SuppressionChecker.SetConfigPathOverride(null);
         }
     }
 

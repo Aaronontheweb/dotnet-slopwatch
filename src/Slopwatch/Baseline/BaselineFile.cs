@@ -220,6 +220,27 @@ public sealed class BaselineFile
     /// <param name="rootDirectory">Root directory for computing relative paths</param>
     /// <param name="scannedFiles">Optional list of files included in the current scan;
     /// only entries for these files are considered for stale removal.</param>
+    /// <returns>Tuple of (removed, added, kept) counts</returns>
+    /// <remarks>
+    /// Retained as a distinct overload so previously compiled consumers that bind the
+    /// three-parameter signature keep working.
+    /// </remarks>
+    public (int removed, int added, int kept) SyncWithDetections(
+        IEnumerable<DetectionResult> results,
+        string rootDirectory,
+        IEnumerable<string>? scannedFiles)
+    {
+        return SyncWithDetections(results, rootDirectory, scannedFiles, skippedFiles: null, skippedResults: null);
+    }
+
+    /// <summary>
+    /// Synchronizes the baseline with current detection results - removes stale entries
+    /// that no longer exist in the provided scan scope and adds any new detections.
+    /// </summary>
+    /// <param name="results">The current detection results</param>
+    /// <param name="rootDirectory">Root directory for computing relative paths</param>
+    /// <param name="scannedFiles">Optional list of files included in the current scan;
+    /// only entries for these files are considered for stale removal.</param>
     /// <param name="skippedFiles">Optional list of files that were present in the scan but
     /// deliberately not analyzed (for example, generated code). Entries for these files are
     /// never removed, so changing the analysis configuration later does not resurface findings.</param>
@@ -230,9 +251,9 @@ public sealed class BaselineFile
     public (int removed, int added, int kept) SyncWithDetections(
         IEnumerable<DetectionResult> results,
         string rootDirectory,
-        IEnumerable<string>? scannedFiles = null,
-        IEnumerable<string>? skippedFiles = null,
-        IEnumerable<DetectionResult>? skippedResults = null)
+        IEnumerable<string>? scannedFiles,
+        IEnumerable<string>? skippedFiles,
+        IEnumerable<DetectionResult>? skippedResults)
     {
         // Build a set of all current hashes from the detection results
         var currentHashes = new HashSet<string>();
@@ -246,13 +267,20 @@ public sealed class BaselineFile
 
         // Findings filtered out as generated are treated as still present, so their entries
         // survive the prune without preserving unrelated entries for the same file.
+        //
+        // The baseline hash is rule + path + snippet, so two identical snippets in different
+        // types collide. Preserving on hash alone would let a skipped generated finding shield a
+        // stale hand-written entry with the same snippet. Requiring the line to match as well
+        // keeps the preservation scoped to the finding that was actually skipped.
+        var skippedResultKeys = new HashSet<(string Hash, int LineNumber)>();
         if (skippedResults is not null)
         {
             foreach (var result in skippedResults)
             {
                 var relativePath = GetRelativePath(result.FilePath, rootDirectory);
                 var codeSnippet = result.CodeSnippet ?? string.Empty;
-                currentHashes.Add(BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet));
+                var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
+                skippedResultKeys.Add((hash, result.LineNumber));
             }
         }
 
@@ -305,6 +333,15 @@ public sealed class BaselineFile
 
             if (!currentHashes.Contains(e.Hash))
             {
+                // The hash is absent from live results. It may still belong to a finding that was
+                // skipped as generated — but only if that finding sits on the same line. A
+                // colliding snippet in a different type must not shield a stale entry.
+                if (skippedResultKeys.Contains((e.Hash, e.LineNumber)))
+                {
+                    kept++;
+                    return false;
+                }
+
                 removed++;
                 return true;
             }
