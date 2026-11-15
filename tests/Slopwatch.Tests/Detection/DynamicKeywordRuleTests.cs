@@ -958,6 +958,111 @@ public class TestClass
         Assert.Equal("SW021", finding.RuleId);
     }
 
+    [Fact]
+    public void Test_DoesNotFlagNamespaceImportNamedDynamic()
+    {
+        // Arrange - `using dynamic;` imports a namespace named `dynamic`, not a type slot
+        const string code = @"
+using dynamic;
+
+namespace dynamic
+{
+    public class X { }
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Test_DoesNotFlagStaticImportNamedDynamic()
+    {
+        // Arrange - `using static dynamic;` imports a type named `dynamic`, not a type slot
+        const string code = @"
+using static dynamic;
+
+public class dynamic
+{
+    public static int Field;
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Test_DoesNotFlagAliasNamedDynamic()
+    {
+        // Arrange - `using dynamic = System.String;` names the alias, not a type slot
+        const string code = @"
+using dynamic = System.String;
+";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Test_FlagsDynamicTypeArgumentInUsingAlias()
+    {
+        // Arrange - the alias target is a real type slot even though it sits in a using
+        const string code = @"
+using D = System.Collections.Generic.List<dynamic>;
+
+public class TestClass
+{
+    public D Values = new();
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal("SW021", result.RuleId);
+        Assert.Equal(2, result.LineNumber);
+    }
+
+    [Fact]
+    public void Test_FlagsDynamicSlotAdjacentToNamespaceImport()
+    {
+        // Arrange - the import is excluded but a genuine slot in the same file is not
+        const string code = @"
+using dynamic;
+
+namespace dynamic
+{
+    public class X { }
+}
+
+public class TestClass
+{
+    public dynamic Value = 1;
+}";
+        var context = CreateTestContext(code);
+
+        // Act
+        var results = RunRule(context);
+
+        // Assert
+        var result = Assert.Single(results);
+        Assert.Equal("SW021", result.RuleId);
+        Assert.Equal(11, result.LineNumber);
+    }
+
     #region Helper Methods
 
     private DetectionContext CreateTestContext(string code)

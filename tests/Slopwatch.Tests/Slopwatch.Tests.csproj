@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Slopwatch\Slopwatch.csproj" />
+    <ProjectReference Include="..\..\src\Slopwatch.Cmd\Slopwatch.Cmd.csproj" />
   </ItemGroup>
 
 </Project>

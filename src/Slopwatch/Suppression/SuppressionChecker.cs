@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.FileSystemGlobbing;
@@ -206,33 +205,10 @@ public sealed class SuppressionChecker
         string projectRoot,
         CancellationToken cancellationToken)
     {
-        var overridePath = ConfigPathOverride.Value;
-        var configPath = string.IsNullOrWhiteSpace(overridePath)
-            ? Path.Combine(projectRoot, ".slopwatch", "config.json")
-            : (Path.IsPathRooted(overridePath)
-                ? overridePath
-                : Path.GetFullPath(Path.Combine(projectRoot, overridePath)));
-
-        if (!File.Exists(configPath))
-            return null;
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(configPath, cancellationToken);
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                AllowTrailingCommas = true,
-                ReadCommentHandling = JsonCommentHandling.Skip
-            };
-
-            return JsonSerializer.Deserialize<SlopwatchConfig>(json, options);
-        }
-        catch
-        {
-            // If config file is invalid, treat as if no config exists
-            return null;
-        }
+        return await SlopwatchConfigLoader.LoadAsync(
+            projectRoot,
+            ConfigPathOverride.Value,
+            cancellationToken);
     }
 
     /// <summary>

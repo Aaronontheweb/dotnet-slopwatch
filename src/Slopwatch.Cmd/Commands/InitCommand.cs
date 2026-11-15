@@ -28,6 +28,9 @@ public sealed class InitCommand
     [Option("min-severity", HelpText = "Minimum severity to baseline: info, warning, error (default: info)")]
     public string MinSeverity { get; set; } = "info";
 
+    [Option('c', "config", HelpText = "Path to a custom .slopwatch/config.json file")]
+    public string? ConfigFile { get; set; }
+
     /// <summary>
     /// Executes the init command.
     /// </summary>
@@ -84,6 +87,41 @@ public sealed class InitCommand
                 var excludeList = options.ExcludePatterns.ToList();
                 excludeList.AddRange(Exclude);
                 options.ExcludePatterns = excludeList;
+            }
+
+            // Apply the generatedCode section from the config file, if present. init must honor
+            // the same mode as analyze, otherwise the baseline it creates disagrees with the
+            // findings the next analyze run reports.
+            var config = await Configuration.SlopwatchConfigLoader.LoadAsync(
+                rootDirectory,
+                ConfigFile,
+                cancellationToken);
+
+            if (config?.GeneratedCode is not null)
+            {
+                options.GeneratedCodeMode = config.GeneratedCode.Mode;
+                options.DetectGeneratedCodeAttributes = config.GeneratedCode.DetectAttributes;
+            }
+
+            // Forward the config path to suppression checking as well, so suppressions from the
+            // selected config apply during init exactly as they do during analyze.
+            if (!string.IsNullOrWhiteSpace(ConfigFile))
+            {
+                var resolvedConfigPath = Path.IsPathRooted(ConfigFile)
+                    ? ConfigFile
+                    : Path.GetFullPath(Path.Combine(rootDirectory, ConfigFile));
+
+                if (!File.Exists(resolvedConfigPath))
+                {
+                    await Console.Error.WriteLineAsync($"Configuration file not found: {resolvedConfigPath}");
+                    return 2;
+                }
+
+                Suppression.SuppressionChecker.SetConfigPathOverride(resolvedConfigPath);
+            }
+            else
+            {
+                Suppression.SuppressionChecker.SetConfigPathOverride(null);
             }
 
             // Create all detection rules
@@ -150,6 +188,10 @@ public sealed class InitCommand
         {
             await Console.Error.WriteLineAsync($"Error during initialization: {ex.Message}");
             return 2;
+        }
+        finally
+        {
+            Suppression.SuppressionChecker.SetConfigPathOverride(null);
         }
     }
 
