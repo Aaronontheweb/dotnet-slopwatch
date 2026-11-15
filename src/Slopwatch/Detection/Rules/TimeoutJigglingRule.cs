@@ -64,6 +64,10 @@ public sealed class TimeoutJigglingRule : IDetectionRule
         // Create suppression checker
         var suppressionChecker = await SuppressionChecker.CreateAsync(context, cancellationToken);
 
+        // One cache per analysis: sibling-group work is shared across every occurrence
+        // in this file instead of being recomputed per occurrence.
+        var identityCache = new StructuralPathCache();
+
         // Find all invocation expressions (method calls)
         var invocations = root.DescendantNodes()
             .OfType<InvocationExpressionSyntax>();
@@ -97,9 +101,11 @@ public sealed class TimeoutJigglingRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     $"Test uses Task.Delay({delayValue}) which may indicate a timing-dependent test",
                     invocation.ToString(),
-                    "Replace Task.Delay with proper synchronization (TaskCompletionSource, SemaphoreSlim, or test framework's async helpers). If delay is intentional (testing timeouts), use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]",
-                    StructuralPath.IdentityFor(invocation)
-                );
+                    "Replace Task.Delay with proper synchronization (TaskCompletionSource, SemaphoreSlim, or test framework's async helpers). If delay is intentional (testing timeouts), use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]"
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(invocation, identityCache)
+                    };
             }
             // Check for Thread.Sleep
             else if (IsThreadSleep(invocation))
@@ -114,9 +120,11 @@ public sealed class TimeoutJigglingRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     $"Test uses Thread.Sleep({delayValue}) which may indicate a timing-dependent test",
                     invocation.ToString(),
-                    "Replace Thread.Sleep with async Task.Delay or proper synchronization primitives. If delay is intentional (testing timeouts), use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]",
-                    StructuralPath.IdentityFor(invocation)
-                );
+                    "Replace Thread.Sleep with async Task.Delay or proper synchronization primitives. If delay is intentional (testing timeouts), use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]"
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(invocation, identityCache)
+                    };
             }
             // Check for SpinWait
             else if (IsSpinWait(invocation))
@@ -130,9 +138,11 @@ public sealed class TimeoutJigglingRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     "Test uses SpinWait which may indicate a timing-dependent test",
                     invocation.ToString(),
-                    "Replace SpinWait with proper synchronization primitives (ManualResetEventSlim, SemaphoreSlim). If SpinWait is intentional, use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]",
-                    StructuralPath.IdentityFor(invocation)
-                );
+                    "Replace SpinWait with proper synchronization primitives (ManualResetEventSlim, SemaphoreSlim). If SpinWait is intentional, use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]"
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(invocation, identityCache)
+                    };
             }
         }
 
@@ -166,9 +176,11 @@ public sealed class TimeoutJigglingRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     "Test creates SpinWait instance which may indicate a timing-dependent test",
                     creation.ToString(),
-                    "Replace SpinWait with proper synchronization primitives (ManualResetEventSlim, SemaphoreSlim). If SpinWait is intentional, use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]",
-                    StructuralPath.IdentityFor(creation)
-                );
+                    "Replace SpinWait with proper synchronization primitives (ManualResetEventSlim, SemaphoreSlim). If SpinWait is intentional, use [SlopwatchSuppress(\"SW004\", \"reason with 20+ chars\")]"
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(creation, identityCache)
+                    };
             }
         }
     }

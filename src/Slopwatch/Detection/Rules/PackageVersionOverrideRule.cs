@@ -274,9 +274,11 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
                 lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                 $"VersionOverride explicitly bypasses Central Package Management for '{packageName}' (version: {version})",
                 element.ToString(),
-                $"Remove VersionOverride='{version}' and update the version in Directory.Packages.props instead. If override is required, add: <!-- slopwatch-ignore: SW006 [your justification here] -->",
-                StructuralPath.IdentityFor(element)
-            );
+                $"Remove VersionOverride='{version}' and update the version in Directory.Packages.props instead. If override is required, add: <!-- slopwatch-ignore: SW006 [your justification here] -->"
+                )
+                {
+                    Identity = StructuralPath.IdentityFor(element)
+                };
         }
 
         await Task.CompletedTask;
@@ -341,9 +343,11 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
                 lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                 $"Version attribute on PackageReference bypasses Central Package Management for '{packageName}' (version: {version})",
                 element.ToString(),
-                $"Remove Version='{version}' from PackageReference and add '<PackageVersion Include=\"{packageName}\" Version=\"{version}\" />' to Directory.Packages.props. If inline version is required, add: <!-- slopwatch-ignore: SW006 [your justification here] -->",
-                StructuralPath.IdentityFor(element)
-            );
+                $"Remove Version='{version}' from PackageReference and add '<PackageVersion Include=\"{packageName}\" Version=\"{version}\" />' to Directory.Packages.props. If inline version is required, add: <!-- slopwatch-ignore: SW006 [your justification here] -->"
+                )
+                {
+                    Identity = StructuralPath.IdentityFor(element)
+                };
         }
 
         await Task.CompletedTask;

@@ -66,6 +66,10 @@ public sealed class DisabledTestRule : IDetectionRule
         // Create suppression checker
         var suppressionChecker = await SuppressionChecker.CreateAsync(context, cancellationToken);
 
+        // One cache per analysis: sibling-group work is shared across every occurrence
+        // in this file instead of being recomputed per occurrence.
+        var identityCache = new StructuralPathCache();
+
         // Find all method declarations
         var methods = root.DescendantNodes()
             .OfType<MethodDeclarationSyntax>();
@@ -100,9 +104,11 @@ public sealed class DisabledTestRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     $"Test method '{method.Identifier.Text}' is disabled with #if false directive",
                     GetMethodSnippet(method),
-                    "Remove the #if false directive and fix the test so it passes. If the test must be disabled, use [SlopwatchSuppress(\"SW001\", \"reason with 20+ chars\")]",
-                    StructuralPath.IdentityFor(method)
-                );
+                    "Remove the #if false directive and fix the test so it passes. If the test must be disabled, use [SlopwatchSuppress(\"SW001\", \"reason with 20+ chars\")]"
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(method, identityCache)
+                    };
                 continue;
             }
 
@@ -134,9 +140,11 @@ public sealed class DisabledTestRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     message,
                     disabledAttribute.ToString(),
-                    "Remove the Skip/Ignore attribute and fix the test so it passes. If the test must be disabled, use [SlopwatchSuppress(\"SW001\", \"reason with 20+ chars\")]",
-                    StructuralPath.IdentityFor(disabledAttribute)
-                );
+                    "Remove the Skip/Ignore attribute and fix the test so it passes. If the test must be disabled, use [SlopwatchSuppress(\"SW001\", \"reason with 20+ chars\")]"
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(disabledAttribute, identityCache)
+                    };
             }
         }
     }

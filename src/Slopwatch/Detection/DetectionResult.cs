@@ -43,10 +43,19 @@ public sealed record DetectionResult(
     int Column,
     string Message,
     string? CodeSnippet = null,
-    string? SuggestedFix = null,
-    string? Identity = null
+    string? SuggestedFix = null
 )
 {
+    /// <summary>
+    /// Optional baseline identity for this detection. When null, <see cref="CodeSnippet"/> is
+    /// used as the identity.
+    /// </summary>
+    /// <remarks>
+    /// This is an init-only property rather than a constructor parameter on purpose. Adding a
+    /// positional parameter to a record replaces the generated constructor and <c>Deconstruct</c>,
+    /// which breaks binary compatibility for any consumer compiled against the previous shape.
+    /// </remarks>
+    public string? Identity { get; init; }
     /// <summary>
     /// The string used as input to the baseline hash.
     /// </summary>

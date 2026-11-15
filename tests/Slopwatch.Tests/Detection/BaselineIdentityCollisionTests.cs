@@ -49,10 +49,15 @@ public class TestClass
     }
 
     [Fact]
-    public void SW001_MethodsDifferingOnlyAfterTruncationDoNotShareIdentity()
+    public void SW001_MethodsWithIdenticalSkipAttributesDoNotShareIdentity()
     {
-        // The display snippet is the first 3 lines of the method, so these two methods render
-        // identically. Their bodies differ, and identity must reflect that.
+        // Both methods carry byte-identical [Fact(Skip = "Flaky")] attributes, so an identity
+        // derived from the attribute text alone would collide. Identity must also reflect the
+        // enclosing method, whose bodies differ here.
+        //
+        // Note: this exercises the attribute branch, not the #if false branch. Code inside
+        // #if false is excluded from the syntax tree by Roslyn, so that branch is unreachable
+        // from source text and cannot be covered by a test.
         const string code = @"
 using Xunit;
 public class TestClass

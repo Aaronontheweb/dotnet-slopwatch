@@ -60,14 +60,18 @@ public sealed class WarningSuppressRule : IDetectionRule
         // Create suppression checker
         var suppressionChecker = await SuppressionChecker.CreateAsync(context, cancellationToken);
 
+        // One cache per analysis: sibling-group work is shared across every occurrence
+        // in this file instead of being recomputed per occurrence.
+        var identityCache = new StructuralPathCache();
+
         // Check for #pragma warning disable directives
-        await foreach (var result in AnalyzePragmaDirectives(context, root, suppressionChecker, cancellationToken))
+        await foreach (var result in AnalyzePragmaDirectives(context, root, suppressionChecker, identityCache, cancellationToken))
         {
             yield return result;
         }
 
         // Check for SuppressMessage attributes
-        await foreach (var result in AnalyzeSuppressMessageAttributes(context, root, suppressionChecker, cancellationToken))
+        await foreach (var result in AnalyzeSuppressMessageAttributes(context, root, suppressionChecker, identityCache, cancellationToken))
         {
             yield return result;
         }
@@ -80,6 +84,7 @@ public sealed class WarningSuppressRule : IDetectionRule
         DetectionContext context,
         SyntaxNode root,
         SuppressionChecker suppressionChecker,
+        StructuralPathCache identityCache,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var allTrivia = root.DescendantTrivia().ToList();
@@ -149,9 +154,11 @@ public sealed class WarningSuppressRule : IDetectionRule
                 location.StartLinePosition.Character + 1,
                 $"#pragma warning disable for {warningText} without matching restore in same scope",
                 directive.ToString(),
-                $"Fix the code causing {warningText} and remove the #pragma, or add matching #pragma warning restore. If suppression is needed, use [SlopwatchSuppress(\"SW002\", \"reason with 20+ chars\")]",
-                StructuralPath.IdentityFor(directive)
-            );
+                $"Fix the code causing {warningText} and remove the #pragma, or add matching #pragma warning restore. If suppression is needed, use [SlopwatchSuppress(\"SW002\", \"reason with 20+ chars\")]"
+                )
+                {
+                    Identity = StructuralPath.IdentityFor(directive, identityCache)
+                };
         }
 
         await Task.CompletedTask;
@@ -164,6 +171,7 @@ public sealed class WarningSuppressRule : IDetectionRule
         DetectionContext context,
         SyntaxNode root,
         SuppressionChecker suppressionChecker,
+        StructuralPathCache identityCache,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var attributeLists = root.DescendantNodes()
@@ -209,9 +217,11 @@ public sealed class WarningSuppressRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     $"SuppressMessage attribute suppressing {suppressionInfo}",
                     attribute.ToString(),
-                    $"Fix the code causing {suppressionInfo} and remove the SuppressMessage attribute. If suppression is needed, use [SlopwatchSuppress(\"SW002\", \"reason with 20+ chars\")]",
-                    StructuralPath.IdentityFor(attribute)
-                );
+                    $"Fix the code causing {suppressionInfo} and remove the SuppressMessage attribute. If suppression is needed, use [SlopwatchSuppress(\"SW002\", \"reason with 20+ chars\")]"
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(attribute, identityCache)
+                    };
             }
         }
 

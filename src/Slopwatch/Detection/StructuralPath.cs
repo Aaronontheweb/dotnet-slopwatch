@@ -56,8 +56,12 @@ public static class StructuralPath
     /// Builds a total path from the compilation unit to <paramref name="node"/>.
     /// </summary>
     /// <param name="node">The node to identify.</param>
+    /// <param name="cache">
+    /// Optional per-analysis cache. Supplying one avoids re-enumerating and re-fingerprinting the
+    /// same sibling group for every occurrence, which is quadratic without it.
+    /// </param>
     /// <returns>A length-prefixed, slash-separated path with one segment per ancestor-or-self.</returns>
-    public static string ForNode(SyntaxNode node)
+    public static string ForNode(SyntaxNode node, StructuralPathCache? cache = null)
     {
         ArgumentNullException.ThrowIfNull(node);
 
@@ -73,7 +77,7 @@ public static class StructuralPath
         {
             var named = IsNamedDeclaration(current);
             var description = DescribeNode(current);
-            var segment = description + SiblingIdentity(current, named ? description : null);
+            var segment = description + SiblingIdentity(current, named ? description : null, cache);
             // Length prefixes make paths unambiguous even if source text contains '/' or ':'.
             segments.Add($"{segment.Length}:{segment}");
         }
@@ -138,15 +142,19 @@ public static class StructuralPath
     /// Builds the baseline identity for a syntax node: structural path plus full node text.
     /// </summary>
     /// <param name="node">The node to identify.</param>
+    /// <param name="cache">
+    /// Optional per-analysis cache. Supplying one avoids re-enumerating and re-fingerprinting the
+    /// same sibling group for every occurrence, which is quadratic without it.
+    /// </param>
     /// <returns>A string suitable for hashing as a baseline identity.</returns>
     /// <remarks>
     /// The full node text is used, never a display-truncated snippet. Rules that truncate for
     /// readability must pass the untruncated node here.
     /// </remarks>
-    public static string IdentityFor(SyntaxNode node)
+    public static string IdentityFor(SyntaxNode node, StructuralPathCache? cache = null)
     {
         ArgumentNullException.ThrowIfNull(node);
-        return $"{ForNode(node)}\n{node}";
+        return $"{ForNode(node, cache)}\n{node}";
     }
 
     /// <summary>
@@ -200,23 +208,60 @@ public static class StructuralPath
     /// <summary>
     /// Identifies a node's position and the contents of its same-kind sibling group.
     /// </summary>
-    private static string SiblingIdentity(SyntaxNode node, string? namedIdentity = null)
+    /// <param name="node">The node to identify.</param>
+    /// <param name="namedIdentity">When non-null, only siblings matching this description are grouped.</param>
+    /// <param name="cache">Optional per-analysis cache for the sibling group work.</param>
+    private static string SiblingIdentity(
+        SyntaxNode node,
+        string? namedIdentity = null,
+        StructuralPathCache? cache = null)
     {
         if (node.Parent is null)
             return "#1of1";
 
-        var siblings = node.Parent.ChildNodes().Where(sibling => sibling.RawKind == node.RawKind
-            && (namedIdentity is null || DescribeNode(sibling) == namedIdentity)).ToList();
-        if (namedIdentity is not null && siblings.Count == 1)
+        // Without a cache this enumerates the parent's children and fingerprints the whole group
+        // once per occurrence, which is quadratic for a group with many members.
+        var group = cache is null
+            ? ComputeGroup(node, namedIdentity)
+            : cache.GetGroup(node, namedIdentity);
+
+        if (namedIdentity is not null && group.Count == 1)
             return string.Empty;
 
-        var ordinal = siblings.IndexOf(node) + 1;
-        var position = $"#{ordinal}of{siblings.Count}";
-        if (siblings.Count == 1)
+        var position = $"#{group.Ordinal}of{group.Count}";
+        if (group.Count == 1)
             return position;
 
-        return $"{position}@{Fingerprint(siblings.Select(sibling => sibling.ToString()))}";
+        return $"{position}@{group.Fingerprint}";
     }
+
+    /// <summary>
+    /// Computes a node's sibling group without caching.
+    /// </summary>
+    private static StructuralPathCache.GroupInfo ComputeGroup(SyntaxNode node, string? namedIdentity)
+    {
+        var siblings = node.Parent!.ChildNodes().Where(sibling => sibling.RawKind == node.RawKind
+            && (namedIdentity is null || DescribeNode(sibling) == namedIdentity)).ToList();
+
+        var ordinal = siblings.IndexOf(node) + 1;
+        if (ordinal <= 0)
+        {
+            siblings = new List<SyntaxNode> { node };
+            ordinal = 1;
+        }
+
+        var fingerprint = siblings.Count == 1
+            ? null
+            : Fingerprint(siblings.Select(sibling => sibling.ToString()));
+
+        return new StructuralPathCache.GroupInfo(ordinal, siblings.Count, fingerprint);
+    }
+
+    /// <summary>
+    /// Describes a node for sibling grouping. Exposed for the cache, which must apply the same
+    /// description rule when it builds a group.
+    /// </summary>
+    internal static string DescribeNodeForCache(SyntaxNode node) => DescribeNode(node);
 
     /// <summary>
     /// Builds the path for a structured trivia node, anchored at the node that owns its token.

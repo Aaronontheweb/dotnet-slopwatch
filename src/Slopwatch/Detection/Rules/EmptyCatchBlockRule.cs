@@ -67,6 +67,10 @@ public sealed class EmptyCatchBlockRule : IDetectionRule
         // Create suppression checker
         var suppressionChecker = await SuppressionChecker.CreateAsync(context, cancellationToken);
 
+        // One cache per analysis: sibling-group work is shared across every occurrence
+        // in this file instead of being recomputed per occurrence.
+        var identityCache = new StructuralPathCache();
+
         // Find all catch clauses
         var catchClauses = root.DescendantNodes()
             .OfType<CatchClauseSyntax>();
@@ -99,9 +103,11 @@ public sealed class EmptyCatchBlockRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     "Empty catch block swallows exceptions without handling",
                     GetCatchSnippet(catchClause),
-                    "Add proper exception handling (log the error, or handle the error condition). If the empty catch is intentional, use [SlopwatchSuppress(\"SW003\", \"reason with 20+ chars\")]",
-                    StructuralPath.IdentityFor(catchClause)
-                );
+                    "Add proper exception handling (log the error, or handle the error condition). If the empty catch is intentional, use [SlopwatchSuppress(\"SW003\", \"reason with 20+ chars\")]"
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(catchClause, identityCache)
+                    };
             }
         }
     }
