@@ -49,18 +49,17 @@ public sealed class GeneratedCodeConfig
     /// are used to identify generated types.
     /// </summary>
     /// <remarks>
-    /// Default is <c>true</c>. Set to <c>false</c> to rely only on filename conventions and
-    /// header comments, which are decided from syntax alone.
+    /// Default is <c>false</c>. Set to <c>true</c> to also treat attributed types as generated.
     /// <para>
     /// Attribute identity cannot be fully resolved without a compilation. Slopwatch analyzes one
     /// file at a time, so a same-named attribute declared in another file of the same project is
-    /// invisible. In that case a hand-written type could be wrongly skipped. Disable this check
-    /// if your project declares its own <c>GeneratedCodeAttribute</c> or a namespace that shadows
-    /// <c>System</c>.
+    /// invisible. In that case a hand-written type could be wrongly skipped, silently dropping
+    /// its findings. That is why this check is opt-in: filename and header detection are decided
+    /// from syntax alone and cannot fail that way.
     /// </para>
     /// </remarks>
     [JsonPropertyName("detectAttributes")]
-    public bool DetectAttributes { get; set; } = true;
+    public bool DetectAttributes { get; set; }
 }
 
 /// <summary>

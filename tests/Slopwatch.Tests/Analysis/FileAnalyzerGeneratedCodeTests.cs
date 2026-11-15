@@ -341,11 +341,83 @@ public class FileAnalyzerGeneratedCodeTests
         }
     }
 
+    [Fact]
+    public async Task Test_AnalyzeModeReachesGeneratedFileName()
+    {
+        // The default exclude patterns must not short-circuit the generated-code mode, otherwise
+        // analyze mode can never reach these files.
+        var (dir, file) = await CreateTempFileAsync("Model.g.cs", SloppyCode);
+
+        try
+        {
+            var results = await AnalyzeAsync(file, GeneratedCodeMode.Analyze);
+
+            Assert.Single(results);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public async Task Test_DefaultExcludesDoNotContainGeneratedFilePatterns()
+    {
+        var options = new AnalysisOptions();
+
+        Assert.DoesNotContain("**/*.g.cs", options.ExcludePatterns);
+        Assert.DoesNotContain("**/*.g.i.cs", options.ExcludePatterns);
+        Assert.DoesNotContain("**/*.Designer.cs", options.ExcludePatterns);
+        Assert.DoesNotContain("**/*.generated.cs", options.ExcludePatterns);
+    }
+
+    [Fact]
+    public async Task Test_AttributeDetectionIsOffByDefault()
+    {
+        var (dir, file) = await CreateTempFileAsync(
+            "Mixed.cs",
+            """
+            using System.CodeDom.Compiler;
+            using Xunit;
+
+            namespace N
+            {
+                [GeneratedCode("tool", "1.0")]
+                public class GeneratedTests
+                {
+                    [Fact(Skip = "Broken test")]
+                    public void BrokenTest() { }
+                }
+            }
+            """);
+
+        try
+        {
+            // Default options: attribute detection is opt-in, so the finding is reported.
+            var analyzer = new FileAnalyzer(
+                new IDetectionRule[] { new DisabledTestRule() },
+                new AnalysisOptions { TestFilePatterns = new[] { "**/*.cs" } });
+
+            var results = new List<DetectionResult>();
+            await foreach (var result in analyzer.AnalyzeFileAsync(file))
+            {
+                results.Add(result);
+            }
+
+            Assert.Single(results);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
     private static FileAnalyzer CreateAnalyzer(GeneratedCodeMode mode) => new(
         new IDetectionRule[] { new DisabledTestRule() },
         new AnalysisOptions
         {
             GeneratedCodeMode = mode,
+            DetectGeneratedCodeAttributes = true,
             TestFilePatterns = new[] { "**/*.cs" }
         });
 

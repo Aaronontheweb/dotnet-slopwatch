@@ -655,6 +655,64 @@ public class GeneratedCodeDetectorTests
     }
 
     [Fact]
+    public void Test_DoesNotDetectQualifiedNameWithImplicitParentNamespaceShadow()
+    {
+        // Inside 'namespace A.B', C# resolves 'System' through A.B.System, then A.System, then
+        // the global System. A custom attribute under A.System must therefore shadow.
+        const string content = """
+            namespace A.B
+            {
+                [System.CodeDom.Compiler.GeneratedCode]
+                class HandWritten
+                {
+                    void M() { }
+                }
+            }
+
+            namespace A.System.CodeDom.Compiler
+            {
+                public class GeneratedCodeAttribute : global::System.Attribute { }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 4);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
+    public void Test_DoesNotDetectQualifiedNameWithComposedNestedDeclaration()
+    {
+        // 'namespace A { namespace B.System.CodeDom.Compiler { } }' declares
+        // A.B.System.CodeDom.Compiler, which shadows System for a type under namespace A.B.
+        const string content = """
+            namespace A
+            {
+                namespace B
+                {
+                    [System.CodeDom.Compiler.GeneratedCode]
+                    class HandWritten
+                    {
+                        void M() { }
+                    }
+                }
+            }
+
+            namespace A
+            {
+                namespace B.System.CodeDom.Compiler
+                {
+                    public class GeneratedCodeAttribute : global::System.Attribute { }
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 6);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
     public void Test_DoesNotDetectUnrelatedQualifiedGeneratedCodeAttribute()
     {
         // Acme.GeneratedCodeAttribute is a different attribute from

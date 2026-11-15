@@ -527,18 +527,24 @@ public static class GeneratedCodeDetector
 
             var rootSegment = qualifiedName.Substring(0, separatorIndex);
 
-            // Collect every namespace declared in this file.
+            // Collect every namespace declared in this file, composed with its ancestors. A
+            // declaration written as 'namespace A { namespace B.System.CodeDom.Compiler { } }'
+            // declares A.B.System.CodeDom.Compiler, and implicitly A.B.System and A.B.
             var declaredNamespaces = new HashSet<string>(StringComparer.Ordinal);
             foreach (var namespaceDeclaration in declaration.SyntaxTree!.GetRoot()
                          .DescendantNodes()
                          .OfType<BaseNamespaceDeclarationSyntax>())
             {
-                declaredNamespaces.Add(namespaceDeclaration.Name.ToString());
+                var composed = ComposeNamespaceName(namespaceDeclaration);
+                if (composed.Length > 0)
+                {
+                    declaredNamespaces.Add(composed);
+                }
             }
 
             // C# resolves the root segment by walking outward from the enclosing namespace: inside
-            // 'namespace App', the name 'System' binds to 'App.System' when that namespace exists.
-            // Declaring 'App.System.CodeDom.Compiler' implicitly declares 'App.System' too, so a
+            // 'namespace A.B', the name 'System' binds to 'A.B.System', then 'A.System', then the
+            // global 'System'. Declaring a nested namespace implicitly declares its parents, so a
             // prefix match counts.
             foreach (var enclosingNamespace in GetEnclosingNamespaces(declaration))
             {
@@ -578,13 +584,15 @@ public static class GeneratedCodeDetector
         }
 
         /// <summary>
-        /// Gets the enclosing namespace names of a declaration, outermost first, including the
-        /// empty global namespace.
+        /// Gets the enclosing namespace names of a declaration, outermost first, including every
+        /// implicit parent and the empty global namespace.
         /// </summary>
         /// <remarks>
         /// Nested declarations are composed into their full names: inside
         /// <c>namespace A { namespace B { ... } }</c> the enclosing names are <c>A</c> and
-        /// <c>A.B</c>, not <c>A</c> and <c>B</c>.
+        /// <c>A.B</c>. Implicit parents are included too, because C# resolves a name by walking
+        /// outward one segment at a time: inside <c>namespace A.B</c>, the name <c>System</c>
+        /// binds to <c>A.B.System</c>, then <c>A.System</c>, then the global <c>System</c>.
         /// </remarks>
         private static IEnumerable<string> GetEnclosingNamespaces(SyntaxNode declaration)
         {
@@ -607,13 +615,43 @@ public static class GeneratedCodeDetector
             foreach (var segment in segments)
             {
                 composed = composed.Length == 0 ? segment : composed + "." + segment;
-                names.Add(composed);
+
+                // Add the full name and every implicit parent, outermost first.
+                var parts = composed.Split('.');
+                var prefix = string.Empty;
+                foreach (var part in parts)
+                {
+                    prefix = prefix.Length == 0 ? part : prefix + "." + part;
+                    if (!names.Contains(prefix))
+                    {
+                        names.Add(prefix);
+                    }
+                }
             }
 
             // The global namespace.
             names.Add(string.Empty);
 
             return names;
+        }
+
+        /// <summary>
+        /// Composes a namespace declaration's name with its ancestors' names.
+        /// </summary>
+        private static string ComposeNamespaceName(BaseNamespaceDeclarationSyntax declaration)
+        {
+            var segments = new List<string> { declaration.Name.ToString() };
+
+            foreach (var ancestor in declaration.Ancestors())
+            {
+                if (ancestor is BaseNamespaceDeclarationSyntax parent)
+                {
+                    segments.Add(parent.Name.ToString());
+                }
+            }
+
+            segments.Reverse();
+            return string.Join(".", segments);
         }
 
         /// <summary>

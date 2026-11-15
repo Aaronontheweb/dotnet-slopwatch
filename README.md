@@ -250,17 +250,17 @@ Two deliberate deviations from Roslyn, both in the conservative direction (a fil
 - A `partial` type is never treated as generated, even when its only declaration carries the attribute. The attribute may live on a declaration in another file, and resolving that requires a compilation.
 - Attribute identity is resolved from syntax alone. A `global::`-qualified name binds to the framework type unconditionally. Any other name must survive shadowing checks: an unqualified name needs its declaring namespace imported in the attribute's lexical scope with no shadowing alias or local type, and a qualified name needs its root segment unshadowed by a `using` alias or a namespace declared in scope. An unrelated attribute such as `Acme.GeneratedCode` does not cause a skip.
 
-**Known limitation.** Slopwatch analyzes one file at a time, so a same-named attribute or a shadowing namespace declared in *another* file of the same project is invisible. In that case a hand-written type could be wrongly skipped. If your project declares its own `GeneratedCodeAttribute`, or a namespace that shadows `System`, disable the attribute check:
+**Attribute detection is opt-in.** Slopwatch analyzes one file at a time, so a same-named attribute or a shadowing namespace declared in *another* file of the same project is invisible. A wrong answer there silently drops hand-written findings, so attribute detection is off by default. Enable it if your project uses `[GeneratedCode]` and does not declare its own attribute of that name:
 
 ```json
 {
   "generatedCode": {
-    "detectAttributes": false
+    "detectAttributes": true
   }
 }
 ```
 
-Filename and header detection are unaffected by that setting and are decided from syntax alone.
+Filename and header detection are always active and are decided from syntax alone.
 
 Control this with the `generatedCode` section in `.slopwatch/config.json`:
 

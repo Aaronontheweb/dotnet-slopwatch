@@ -218,7 +218,7 @@ Two deliberate deviations from Roslyn, both conservative (a file is analyzed rat
 - A `partial` type is never treated as generated, even when its only declaration carries the attribute.
 - Attribute identity is resolved from syntax alone: a `global::`-qualified name binds to the framework type unconditionally, while any other name must survive shadowing checks — an unqualified name needs its declaring namespace imported in the attribute's lexical scope with no shadowing alias or local type, and a qualified name needs its root segment unshadowed by a `using` alias or a namespace declared in scope.
 
-**Known limitation.** Slopwatch analyzes one file at a time, so a same-named attribute or a shadowing namespace declared in another file of the same project is invisible. If your project declares its own `GeneratedCodeAttribute`, or a namespace that shadows `System`, set `generatedCode.detectAttributes` to `false`. Filename and header detection are unaffected and are decided from syntax alone.
+**Attribute detection is opt-in.** Slopwatch analyzes one file at a time, so a same-named attribute or a shadowing namespace declared in another file of the same project is invisible. A wrong answer there silently drops hand-written findings, so `generatedCode.detectAttributes` defaults to `false`. Filename and header detection are always active and are decided from syntax alone.
 
 Configure the behavior in `.slopwatch/config.json`:
 

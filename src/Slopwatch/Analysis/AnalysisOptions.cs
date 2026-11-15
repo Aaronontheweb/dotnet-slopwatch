@@ -38,9 +38,10 @@ public sealed class AnalysisOptions
     /// Gets or sets the file patterns to exclude from analysis.
     /// </summary>
     /// <remarks>
-    /// Uses glob-style patterns (e.g., "**/obj/**", "**/bin/**", "*.Designer.cs").
+    /// Uses glob-style patterns (e.g., "**/obj/**", "**/bin/**").
     /// Files matching any of these patterns will be skipped during analysis.
-    /// Default patterns exclude common build artifacts and generated files.
+    /// Default patterns exclude build artifacts only. Generated source files are handled by
+    /// <see cref="GeneratedCodeMode"/> instead, so that the configured mode can analyze them.
     /// </remarks>
     public IReadOnlyList<string> ExcludePatterns { get; set; } = new[]
     {
@@ -48,10 +49,6 @@ public sealed class AnalysisOptions
         "**/bin/**",
         "**/.vs/**",
         "**/.git/**",
-        "**/*.Designer.cs",
-        "**/*.generated.cs",
-        "**/*.g.cs",
-        "**/*.g.i.cs",
         // Git worktrees - avoid analyzing the same code multiple times
         "**/worktrees/**"
     };
@@ -70,9 +67,13 @@ public sealed class AnalysisOptions
     /// Gets or sets whether generated-code attributes are used to identify generated types.
     /// </summary>
     /// <remarks>
-    /// Default is <c>true</c>. Filename and header detection are unaffected by this setting.
+    /// Default is <c>false</c>. Attribute identity cannot be fully resolved without a
+    /// compilation, and slopwatch analyzes one file at a time, so a same-named attribute or a
+    /// shadowing namespace declared in another file is invisible. A wrong answer there silently
+    /// drops hand-written findings, so attribute detection is opt-in. Filename and header
+    /// detection are unaffected by this setting and are decided from syntax alone.
     /// </remarks>
-    public bool DetectGeneratedCodeAttributes { get; set; } = true;
+    public bool DetectGeneratedCodeAttributes { get; set; }
 
     /// <summary>
     /// Gets or sets the patterns used to identify test files.

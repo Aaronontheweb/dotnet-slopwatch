@@ -38,9 +38,9 @@
 
   // Controls how files that declare themselves generated are treated.
   // Modes: "skip" (default), "analyze", "analyzeAndReport"
-  // detectAttributes: set false to rely only on filename and header detection
+  // detectAttributes: opt in to [GeneratedCode]/[DebuggerNonUserCode] detection (default false)
   "generatedCode": {
     "mode": "skip",
-    "detectAttributes": true
+    "detectAttributes": false
   }
 }
