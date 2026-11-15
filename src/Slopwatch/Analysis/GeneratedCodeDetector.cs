@@ -581,20 +581,36 @@ public static class GeneratedCodeDetector
         /// Gets the enclosing namespace names of a declaration, outermost first, including the
         /// empty global namespace.
         /// </summary>
+        /// <remarks>
+        /// Nested declarations are composed into their full names: inside
+        /// <c>namespace A { namespace B { ... } }</c> the enclosing names are <c>A</c> and
+        /// <c>A.B</c>, not <c>A</c> and <c>B</c>.
+        /// </remarks>
         private static IEnumerable<string> GetEnclosingNamespaces(SyntaxNode declaration)
         {
-            var names = new List<string>();
+            var segments = new List<string>();
 
             foreach (var ancestor in declaration.Ancestors())
             {
                 if (ancestor is BaseNamespaceDeclarationSyntax namespaceDeclaration)
                 {
-                    names.Add(namespaceDeclaration.Name.ToString());
+                    segments.Add(namespaceDeclaration.Name.ToString());
                 }
             }
 
-            // Outermost first, then the global namespace.
-            names.Reverse();
+            // Outermost first.
+            segments.Reverse();
+
+            var names = new List<string>();
+            var composed = string.Empty;
+
+            foreach (var segment in segments)
+            {
+                composed = composed.Length == 0 ? segment : composed + "." + segment;
+                names.Add(composed);
+            }
+
+            // The global namespace.
             names.Add(string.Empty);
 
             return names;

@@ -100,6 +100,7 @@ public sealed class InitCommand
             if (config?.GeneratedCode is not null)
             {
                 options.GeneratedCodeMode = config.GeneratedCode.Mode;
+                options.DetectGeneratedCodeAttributes = config.GeneratedCode.DetectAttributes;
             }
 
             // Forward the config path to suppression checking as well, so suppressions from the

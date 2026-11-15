@@ -152,6 +152,7 @@ public sealed class AnalyzeCommand
             if (config?.GeneratedCode is not null)
             {
                 options.GeneratedCodeMode = config.GeneratedCode.Mode;
+                options.DetectGeneratedCodeAttributes = config.GeneratedCode.DetectAttributes;
             }
 
             // Load baseline (required by default unless --no-baseline or --create-baseline)

@@ -136,7 +136,8 @@ public sealed class FileAnalyzer
             // than gating the whole file. Razor files are excluded: their syntax tree is
             // synthesized from the markup, so attribute checks would not reflect the source.
             var isGeneratedResult = isGeneratedFile
-                || (!hasGeneratedSource
+                || (_options.DetectGeneratedCodeAttributes
+                    && !hasGeneratedSource
                     && GeneratedCodeDetector.IsResultInGeneratedType(mapped, context.SyntaxTree));
 
             if (isGeneratedResult)

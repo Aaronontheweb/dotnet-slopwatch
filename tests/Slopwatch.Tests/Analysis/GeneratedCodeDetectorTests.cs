@@ -626,6 +626,35 @@ public class GeneratedCodeDetectorTests
     }
 
     [Fact]
+    public void Test_DoesNotDetectQualifiedNameWithNestedNamespaceShadow()
+    {
+        // Nested declarations compose: inside 'namespace A { namespace B { ... } }' the
+        // enclosing names are A and A.B, so A.B.System shadows the global System namespace.
+        const string content = """
+            namespace A
+            {
+                namespace B
+                {
+                    [System.CodeDom.Compiler.GeneratedCode]
+                    class HandWritten
+                    {
+                        void M() { }
+                    }
+                }
+            }
+
+            namespace A.B.System.CodeDom.Compiler
+            {
+                public class GeneratedCodeAttribute : global::System.Attribute { }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(content, path: "File.cs");
+        var result = CreateResult(lineNumber: 6);
+
+        Assert.False(GeneratedCodeDetector.IsResultInGeneratedType(result, tree));
+    }
+
+    [Fact]
     public void Test_DoesNotDetectUnrelatedQualifiedGeneratedCodeAttribute()
     {
         // Acme.GeneratedCodeAttribute is a different attribute from

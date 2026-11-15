@@ -43,6 +43,24 @@ public sealed class GeneratedCodeConfig
     /// </summary>
     [JsonPropertyName("mode")]
     public Analysis.GeneratedCodeMode Mode { get; set; } = Analysis.GeneratedCodeMode.Skip;
+
+    /// <summary>
+    /// Gets or sets whether <c>[GeneratedCode]</c> and <c>[DebuggerNonUserCode]</c> attributes
+    /// are used to identify generated types.
+    /// </summary>
+    /// <remarks>
+    /// Default is <c>true</c>. Set to <c>false</c> to rely only on filename conventions and
+    /// header comments, which are decided from syntax alone.
+    /// <para>
+    /// Attribute identity cannot be fully resolved without a compilation. Slopwatch analyzes one
+    /// file at a time, so a same-named attribute declared in another file of the same project is
+    /// invisible. In that case a hand-written type could be wrongly skipped. Disable this check
+    /// if your project declares its own <c>GeneratedCodeAttribute</c> or a namespace that shadows
+    /// <c>System</c>.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("detectAttributes")]
+    public bool DetectAttributes { get; set; } = true;
 }
 
 /// <summary>

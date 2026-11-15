@@ -67,6 +67,14 @@ public sealed class AnalysisOptions
     public GeneratedCodeMode GeneratedCodeMode { get; set; } = GeneratedCodeMode.Skip;
 
     /// <summary>
+    /// Gets or sets whether generated-code attributes are used to identify generated types.
+    /// </summary>
+    /// <remarks>
+    /// Default is <c>true</c>. Filename and header detection are unaffected by this setting.
+    /// </remarks>
+    public bool DetectGeneratedCodeAttributes { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the patterns used to identify test files.
     /// </summary>
     /// <remarks>

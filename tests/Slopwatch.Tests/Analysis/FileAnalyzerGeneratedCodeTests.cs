@@ -294,6 +294,53 @@ public class FileAnalyzerGeneratedCodeTests
         }
     }
 
+    [Fact]
+    public async Task Test_AttributeDetectionCanBeDisabled()
+    {
+        // The cross-file shadowing limitation cannot be resolved from a single syntax tree, so
+        // the attribute check is opt-out.
+        var (dir, file) = await CreateTempFileAsync(
+            "Mixed.cs",
+            """
+            using System.CodeDom.Compiler;
+            using Xunit;
+
+            namespace N
+            {
+                [GeneratedCode("tool", "1.0")]
+                public class GeneratedTests
+                {
+                    [Fact(Skip = "Broken test")]
+                    public void BrokenTest() { }
+                }
+            }
+            """);
+
+        try
+        {
+            var analyzer = new FileAnalyzer(
+                new IDetectionRule[] { new DisabledTestRule() },
+                new AnalysisOptions
+                {
+                    GeneratedCodeMode = GeneratedCodeMode.Skip,
+                    DetectGeneratedCodeAttributes = false,
+                    TestFilePatterns = new[] { "**/*.cs" }
+                });
+
+            var results = new List<DetectionResult>();
+            await foreach (var result in analyzer.AnalyzeFileAsync(file))
+            {
+                results.Add(result);
+            }
+
+            Assert.Single(results);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
     private static FileAnalyzer CreateAnalyzer(GeneratedCodeMode mode) => new(
         new IDetectionRule[] { new DisabledTestRule() },
         new AnalysisOptions
