@@ -105,6 +105,54 @@ public class TestClass
         Assert.Empty(results);
     }
 
+    [Fact]
+    public void SW001_MethodsInActiveElifBranchAreNotReportedAsDisabled()
+    {
+        // An #elif branch is active when its own condition holds, regardless of the preceding
+        // #if. Treating #elif like #else would be wrong for `#elif false`.
+        const string code = @"
+using Xunit;
+public class TestClass
+{
+#if false
+    public void NeverCompiled() { }
+#elif true
+    [Fact]
+    public void ActiveTest()
+    {
+        Assert.True(true);
+    }
+#endif
+}";
+
+        var results = RunRule(new DisabledTestRule(), CreateCsContext(code, isTestFile: true));
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void SW001_MethodsInFalseElifBranchAreNotReportedAsDisabled()
+    {
+        // The complement: `#elif false` is not active, so a method there is genuinely disabled
+        // and Roslyn excludes it from the tree. Nothing to report either way.
+        const string code = @"
+using Xunit;
+public class TestClass
+{
+#if false
+    public void NeverCompiled() { }
+#elif false
+    [Fact]
+    public void AlsoNeverCompiled()
+    {
+        Assert.True(true);
+    }
+#endif
+}";
+
+        var results = RunRule(new DisabledTestRule(), CreateCsContext(code, isTestFile: true));
+        Assert.Empty(results);
+    }
+
     #endregion
 
     #region SW002 - WarningSuppressRule

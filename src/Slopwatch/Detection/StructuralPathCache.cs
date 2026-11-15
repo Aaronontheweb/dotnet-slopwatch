@@ -7,6 +7,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Slopwatch.Detection;
 
@@ -29,7 +30,10 @@ namespace Slopwatch.Detection;
 /// </remarks>
 public sealed class StructuralPathCache
 {
-    private readonly Dictionary<GroupKey, GroupInfo> _groups = new(GroupKeyComparer.Instance);
+    private readonly Dictionary<GroupKey, CachedGroup> _groups = new(GroupKeyComparer.Instance);
+
+    private readonly Dictionary<DirectiveKey, StructuralPath.DirectiveGroup> _directives =
+        new(DirectiveKeyComparer.Instance);
 
     /// <summary>
     /// Returns the cached group information for a node's sibling group, computing it on first use.
@@ -46,9 +50,26 @@ public sealed class StructuralPathCache
             return new GroupInfo(1, 1, null);
 
         var key = new GroupKey(parent, node.RawKind, namedIdentity);
-        if (_groups.TryGetValue(key, out var cached))
-            return cached;
+        if (!_groups.TryGetValue(key, out var cached))
+        {
+            cached = BuildGroup(node, namedIdentity);
+            _groups[key] = cached;
+        }
 
+        // The cached entry describes the whole group, not any particular member. Each node must
+        // look up its own ordinal: returning the ordinal of whichever node happened to populate
+        // the cache would give every sibling the same position, which is exactly the baseline
+        // collision this identity scheme exists to prevent.
+        var ordinal = cached.Ordinals.TryGetValue(node, out var found) ? found : 1;
+        return new GroupInfo(ordinal, cached.Count, cached.Fingerprint);
+    }
+
+    /// <summary>
+    /// Enumerates a sibling group once and records each member's ordinal.
+    /// </summary>
+    private static CachedGroup BuildGroup(SyntaxNode node, string? namedIdentity)
+    {
+        var parent = node.Parent!;
         var siblings = new List<SyntaxNode>();
         foreach (var sibling in parent.ChildNodes())
         {
@@ -61,13 +82,8 @@ public sealed class StructuralPathCache
             siblings.Add(sibling);
         }
 
-        var ordinal = siblings.FindIndex(sibling => ReferenceEquals(sibling, node)) + 1;
-        if (ordinal <= 0)
-        {
-            // Defensive: the node was not found in its own sibling list.
-            siblings = new List<SyntaxNode> { node };
-            ordinal = 1;
-        }
+        if (siblings.Count == 0)
+            siblings.Add(node);
 
         // The fingerprint covers the whole group, so it is computed once here rather than once
         // per member. Single-member groups never need one.
@@ -85,9 +101,77 @@ public sealed class StructuralPathCache
                 SHA256.HashData(Encoding.UTF8.GetBytes(contents.ToString())));
         }
 
-        var info = new GroupInfo(ordinal, siblings.Count, fingerprint);
-        _groups[key] = info;
-        return info;
+        var ordinals = new Dictionary<SyntaxNode, int>(ReferenceEqualityComparer.Instance);
+        for (var i = 0; i < siblings.Count; i++)
+            ordinals[siblings[i]] = i + 1;
+
+        return new CachedGroup(siblings.Count, fingerprint, ordinals);
+    }
+
+    /// <summary>
+    /// A sibling group's shared data: member count, group fingerprint, and per-member ordinals.
+    /// </summary>
+    private sealed record CachedGroup(
+        int Count,
+        string? Fingerprint,
+        Dictionary<SyntaxNode, int> Ordinals);
+
+    /// <summary>
+    /// Returns the cached directive group for a structured trivia node's owner.
+    /// </summary>
+    /// <param name="owner">The node that owns the trivia's token.</param>
+    /// <param name="trivia">The trivia whose group is needed.</param>
+    /// <remarks>
+    /// Structured trivia reports a null Parent, so it cannot use the ordinary sibling-group cache.
+    /// Keying on the owner plus the trivia kind gives the same grouping the uncached path builds,
+    /// while computing it once per owner instead of once per directive.
+    /// </remarks>
+    internal StructuralPath.DirectiveGroup GetDirectiveGroup(SyntaxNode? owner, StructuredTriviaSyntax trivia)
+    {
+        if (owner is null)
+            return new StructuralPath.DirectiveGroup(new[] { trivia }, null);
+
+        var key = new DirectiveKey(owner, trivia.RawKind);
+        if (_directives.TryGetValue(key, out var cached))
+            return cached;
+
+        var members = owner.DescendantTrivia()
+            .Where(candidate => candidate.RawKind == trivia.RawKind)
+            .Select(candidate => candidate.GetStructure())
+            .OfType<StructuredTriviaSyntax>()
+            .ToArray();
+
+        if (members.Length == 0)
+            members = new[] { trivia };
+
+        var fingerprint = members.Length == 1
+            ? null
+            : StructuralPath.FingerprintForCache(members.Select(m => m.ToString()));
+
+        var group = new StructuralPath.DirectiveGroup(members, fingerprint);
+        _directives[key] = group;
+        return group;
+    }
+
+    /// <summary>
+    /// Identifies a directive group: its owning node and the trivia kind.
+    /// </summary>
+    private readonly record struct DirectiveKey(SyntaxNode Owner, int RawKind);
+
+    /// <summary>
+    /// Compares directive keys by owner reference, so distinct owners never share a group.
+    /// </summary>
+    private sealed class DirectiveKeyComparer : IEqualityComparer<DirectiveKey>
+    {
+        public static readonly DirectiveKeyComparer Instance = new();
+
+        public bool Equals(DirectiveKey x, DirectiveKey y) =>
+            ReferenceEquals(x.Owner, y.Owner) && x.RawKind == y.RawKind;
+
+        public int GetHashCode(DirectiveKey key) =>
+            HashCode.Combine(
+                System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(key.Owner),
+                key.RawKind);
     }
 
     /// <summary>

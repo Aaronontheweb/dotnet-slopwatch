@@ -1,0 +1,212 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Slopwatch.Detection;
+using Slopwatch.Detection.Rules;
+using Xunit;
+
+namespace Slopwatch.Tests.Detection;
+
+/// <summary>
+/// Asserts that <see cref="StructuralPathCache"/> is a pure optimization: every identity it
+/// produces must be byte-identical to the uncached path.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This is the guard that was missing when the cache was introduced. The cache key identifies a
+/// sibling <em>group</em>, but the first version stored the first requested node's ordinal in the
+/// cached entry, so every later sibling in that group received the same ordinal. Two identical
+/// statements then produced one identity instead of two, which reintroduced exactly the baseline
+/// collision issue #142 exists to fix — and the existing tests still passed, because they only
+/// checked that identities were distinct within a single uncached run.
+/// </para>
+/// <para>
+/// These tests compare cached against uncached output for the same input, so any divergence
+/// between the two paths fails regardless of which one is "correct".
+/// </para>
+/// </remarks>
+public class StructuralPathCacheEquivalenceTests
+{
+    private const string FilePath = "/tmp/slopwatch-alloc/TestFile.cs";
+
+    [Theory]
+    [InlineData("class C{void M(){Task.Delay(100);Task.Delay(100);}}")]
+    [InlineData("class C{void M(){Task.Delay(100);Task.Delay(200);Task.Delay(100);}}")]
+    [InlineData("class C{void A(){Task.Delay(1);}void B(){Task.Delay(1);}}")]
+    [InlineData("class C{void M(){{Task.Delay(1);}{Task.Delay(1);}}}")]
+    [InlineData("class C{void M(){F(Task.Delay(1),Task.Delay(1));}}")]
+    [InlineData("class C{void M(){if(true){Task.Delay(1);}else{Task.Delay(1);}}}")]
+    [InlineData("class C{void M(){Task.Delay(1);Task.Delay(1);Task.Delay(1);Task.Delay(1);}}")]
+    public void CachedIdentitiesMatchUncachedIdentities(string code)
+    {
+        var tree = CSharpSyntaxTree.ParseText(code);
+        var root = tree.GetRoot();
+
+        var cache = new StructuralPathCache();
+        var compared = 0;
+
+        foreach (var node in root.DescendantNodes())
+        {
+            var uncached = StructuralPath.IdentityFor(node);
+            var cached = StructuralPath.IdentityFor(node, cache);
+
+            Assert.Equal(uncached, cached);
+            compared++;
+        }
+
+        Assert.True(compared > 0, "Fixture produced no nodes to compare.");
+    }
+
+    [Fact]
+    public void IdenticalSiblingsReceiveDistinctIdentities()
+    {
+        // The exact reproduction from the review: two byte-identical statements. With the ordinal
+        // bug, both received ordinal #1 and produced one identity.
+        const string code = "class C{void M(){Task.Delay(100);Task.Delay(100);}}";
+        var tree = CSharpSyntaxTree.ParseText(code);
+        var root = tree.GetRoot();
+
+        var cache = new StructuralPathCache();
+        var invocations = root.DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
+
+        Assert.Equal(2, invocations.Count);
+
+        var identities = invocations
+            .Select(node => StructuralPath.IdentityFor(node, cache))
+            .ToList();
+
+        Assert.NotEqual(identities[0], identities[1]);
+    }
+
+    [Fact]
+    public void RepeatedLookupsOfTheSameNodeAreStable()
+    {
+        // A cache must not change its answer for a node it has already seen.
+        const string code = "class C{void M(){Task.Delay(1);Task.Delay(2);}}";
+        var tree = CSharpSyntaxTree.ParseText(code);
+        var root = tree.GetRoot();
+
+        var cache = new StructuralPathCache();
+        var node = root.DescendantNodes().OfType<InvocationExpressionSyntax>().Last();
+
+        var first = StructuralPath.IdentityFor(node, cache);
+        var second = StructuralPath.IdentityFor(node, cache);
+        var third = StructuralPath.IdentityFor(node, cache);
+
+        Assert.Equal(first, second);
+        Assert.Equal(second, third);
+        Assert.Equal(StructuralPath.IdentityFor(node), first);
+    }
+
+    [Fact]
+    public void SeparateCachesDoNotShareState()
+    {
+        // Two analyses must not influence each other. A cache that leaked across analyses would
+        // produce identities that depend on analysis order.
+        const string code = "class C{void M(){Task.Delay(1);Task.Delay(1);}}";
+        var tree = CSharpSyntaxTree.ParseText(code);
+        var root = tree.GetRoot();
+
+        var nodes = root.DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
+
+        var firstRun = nodes.Select(n => StructuralPath.IdentityFor(n, new StructuralPathCache())).ToList();
+        var secondRun = nodes.Select(n => StructuralPath.IdentityFor(n, new StructuralPathCache())).ToList();
+
+        Assert.Equal(firstRun, secondRun);
+    }
+
+    [Fact]
+    public void PragmaDirectivesMatchUncachedIdentities()
+    {
+        // Structured trivia reports a null Parent, so it takes a separate cache path. Verify that
+        // path agrees with the uncached one.
+        const string code = @"
+class C
+{
+#pragma warning disable CS1591
+    void A() { }
+#pragma warning disable CS1591
+    void B() { }
+}";
+        var tree = CSharpSyntaxTree.ParseText(code);
+        var root = tree.GetRoot();
+
+        var cache = new StructuralPathCache();
+        var directives = root.DescendantTrivia()
+            .Where(t => t.IsKind(SyntaxKind.PragmaWarningDirectiveTrivia))
+            .Select(t => t.GetStructure())
+            .OfType<StructuredTriviaSyntax>()
+            .ToList();
+
+        Assert.Equal(2, directives.Count);
+
+        var cachedIdentities = new List<string>();
+        foreach (var directive in directives)
+        {
+            Assert.Equal(
+                StructuralPath.IdentityFor(directive),
+                StructuralPath.IdentityFor(directive, cache));
+            cachedIdentities.Add(StructuralPath.IdentityFor(directive, cache));
+        }
+
+        Assert.NotEqual(cachedIdentities[0], cachedIdentities[1]);
+    }
+
+    [Fact]
+    public void PragmaDirectivesAllocateLinearly()
+    {
+        // Structured trivia reports a null Parent, so it takes a separate cache path. Without
+        // caching that path, every directive re-enumerates and re-fingerprints the whole group:
+        // measured 1.1 GB at 2,000 directives with 3.7x/3.8x growth per doubling.
+        var small = MeasureRuleAllocation(BuildPragmas(500));
+        var large = MeasureRuleAllocation(BuildPragmas(2000));
+
+        Assert.True(
+            large < small * 6.0,
+            $"Allocation grew from {small:N0} bytes at 500 directives to {large:N0} bytes at 2000 "
+            + $"(ratio {large / (double)small:F2}, expected < 6.0 for a 4x input increase). "
+            + "Structured-trivia fingerprints are likely being recomputed per directive.");
+    }
+
+    private static long MeasureRuleAllocation(string code)
+    {
+        var tree = CSharpSyntaxTree.ParseText(code);
+        RunRule(tree, code);
+        RunRule(tree, code);
+
+        var best = long.MaxValue;
+        for (var i = 0; i < 3; i++)
+        {
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            RunRule(tree, code);
+            var after = GC.GetAllocatedBytesForCurrentThread();
+            best = Math.Min(best, after - before);
+        }
+
+        return best;
+    }
+
+    private static int RunRule(SyntaxTree tree, string code)
+    {
+        var context = new DetectionContext(FilePath, "TestFile.cs", code, tree, false);
+        var count = 0;
+        var enumerator = new WarningSuppressRule().AnalyzeAsync(context).GetAsyncEnumerator();
+        try
+        {
+            while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                count++;
+        }
+        finally
+        {
+            enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
+        return count;
+    }
+
+    private static string BuildPragmas(int count)
+    {
+        var directives = string.Concat(Enumerable.Repeat("#pragma warning disable CS1591\n", count));
+        return "class C{\n" + directives + "void M(){}\n}";
+    }
+}

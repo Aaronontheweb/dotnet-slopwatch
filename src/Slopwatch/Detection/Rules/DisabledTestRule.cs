@@ -271,6 +271,18 @@ public sealed class DisabledTestRule : IDetectionRule
                     activeIf = false;
                 }
             }
+            else if (triviaItem.IsKind(SyntaxKind.ElifDirectiveTrivia))
+            {
+                // An #elif branch is active when its own condition holds, regardless of the
+                // preceding #if. Treating it like #else would be wrong for `#elif false`, so
+                // evaluate the condition the same way #if does.
+                if (triviaItem.SpanStart < methodPosition)
+                {
+                    var directive = triviaItem.GetStructure() as ElifDirectiveTriviaSyntax;
+                    var condition = directive?.Condition.ToString().Trim();
+                    activeIf = condition == "false" || condition == "FALSE";
+                }
+            }
             else if (triviaItem.IsKind(SyntaxKind.EndIfDirectiveTrivia))
             {
                 if (triviaItem.SpanStart < methodPosition)

@@ -70,7 +70,7 @@ public static class StructuralPath
         // directive in a file to a single-segment path, reintroducing the collision this helper
         // exists to remove. Anchor them explicitly instead.
         if (node is StructuredTriviaSyntax trivia)
-            return ForStructuredTrivia(trivia);
+            return ForStructuredTrivia(trivia, cache);
 
         var segments = new List<string>();
         for (SyntaxNode? current = node; current is not null; current = current.Parent)
@@ -264,13 +264,12 @@ public static class StructuralPath
     internal static string DescribeNodeForCache(SyntaxNode node) => DescribeNode(node);
 
     /// <summary>
-    /// Builds the path for a structured trivia node, anchored at the node that owns its token.
+    /// Collects the directive group for a structured trivia node without caching.
     /// </summary>
-    private static string ForStructuredTrivia(StructuredTriviaSyntax trivia)
+    private static DirectiveGroup BuildDirectiveGroup(
+        SyntaxNode? owner,
+        StructuredTriviaSyntax trivia)
     {
-        var owner = trivia.ParentTrivia.Token.Parent;
-        var prefix = owner is null ? string.Empty : ForNode(owner) + "/";
-
         var sameKind = owner is null
             ? Array.Empty<StructuredTriviaSyntax>()
             : owner.DescendantTrivia()
@@ -282,21 +281,55 @@ public static class StructuralPath
         if (sameKind.Length == 0)
             sameKind = new[] { trivia };
 
-        var ordinal = Array.FindIndex(sameKind, candidate => candidate.Span == trivia.Span) + 1;
+        var fingerprint = sameKind.Length == 1
+            ? null
+            : Fingerprint(sameKind.Select(candidate => candidate.ToString()));
+
+        return new DirectiveGroup(sameKind, fingerprint);
+    }
+
+    /// <summary>
+    /// A directive group's members and its shared fingerprint.
+    /// </summary>
+    internal readonly record struct DirectiveGroup(
+        StructuredTriviaSyntax[] Members,
+        string? Fingerprint);
+
+    /// <summary>
+    /// Builds the path for a structured trivia node, anchored at the node that owns its token.
+    /// </summary>
+    private static string ForStructuredTrivia(StructuredTriviaSyntax trivia, StructuralPathCache? cache = null)
+    {
+        var owner = trivia.ParentTrivia.Token.Parent;
+        var prefix = owner is null ? string.Empty : ForNode(owner, cache) + "/";
+
+        // Structured trivia reports a null Parent, so it cannot use the ordinary sibling-group
+        // cache. Cache the directive group per owner instead: without this, every directive in a
+        // file re-enumerates and re-fingerprints the whole group, which is quadratic.
+        var group = cache is null
+            ? BuildDirectiveGroup(owner, trivia)
+            : cache.GetDirectiveGroup(owner, trivia);
+
+        var ordinal = Array.FindIndex(group.Members, candidate => candidate.Span == trivia.Span) + 1;
         if (ordinal <= 0)
             ordinal = 1;
 
         var description = DescribeNode(trivia);
-        var position = $"#{ordinal}of{sameKind.Length}";
+        var position = $"#{ordinal}of{group.Members.Length}";
         // The group fingerprint participates for the same reason it does for ordinary syntax
         // nodes: without it, deleting one directive and appending an identical one lets the new
         // directive inherit the old position's baseline identity. Ordinal plus count alone cannot
         // detect that the group's contents changed.
-        var segment = sameKind.Length == 1
+        var segment = group.Members.Length == 1
             ? $"{description}{position}"
-            : $"{description}{position}@{Fingerprint(sameKind.Select(candidate => candidate.ToString()))}";
+            : $"{description}{position}@{group.Fingerprint}";
         return prefix + $"{segment.Length}:{segment}";
     }
+
+    /// <summary>
+    /// Hashes a sequence of texts into a stable group fingerprint.
+    /// </summary>
+    internal static string FingerprintForCache(IEnumerable<string> texts) => Fingerprint(texts);
 
     /// <summary>
     /// Hashes a sequence of texts into a stable group fingerprint.
