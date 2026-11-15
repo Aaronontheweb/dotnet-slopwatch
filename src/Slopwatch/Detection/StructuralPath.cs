@@ -251,14 +251,22 @@ public static class StructuralPath
     }
 
     /// <summary>
-    /// Retains all declaration header tokens without including bodies or nested members.
+    /// Retains all declaration header tokens without including bodies, nested members, or attributes.
     /// </summary>
+    /// <remarks>
+    /// Attributes are excluded deliberately. A declaration header is an ancestor path segment for
+    /// every finding nested inside it, so including attribute tokens meant that adding an unrelated
+    /// attribute — a <c>[Collection]</c>, a <c>[Trait]</c>, a <c>[SuppressMessage]</c> — changed the
+    /// identity of every finding in the class and silently un-baselined them. Attributes are not
+    /// part of a declaration's structural identity; the reported node's own text still carries its
+    /// attributes, so changing the attribute on the finding itself still changes its identity.
+    /// </remarks>
     private static string DeclarationHeader(SyntaxNode declaration)
     {
         var tokens = declaration.DescendantTokens(descendIntoChildren: child =>
             ReferenceEquals(child, declaration) || child is not (
                 BlockSyntax or ArrowExpressionClauseSyntax or AccessorListSyntax
-                or EqualsValueClauseSyntax or MemberDeclarationSyntax));
+                or EqualsValueClauseSyntax or MemberDeclarationSyntax or AttributeListSyntax));
         // Preserve token boundaries and literal spelling; no special cases for today's named
         // declaration forms are needed. A future member form gets this same header fallback.
         return string.Join(" ", tokens.Select(token => token.Text));
