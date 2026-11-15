@@ -191,7 +191,8 @@ public sealed class ProjectFileRule : IDetectionRule
                         lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                         $"Adding warnings to NoWarn: {warnings}",
                         element.ToString(),
-                        $"Remove the NoWarn entry and fix the underlying code issues causing {warnings}. If suppression is truly necessary, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
+                        $"Remove the NoWarn entry and fix the underlying code issues causing {warnings}. If suppression is truly necessary, add: <!-- slopwatch-ignore: SW005 [your justification here] -->",
+                        StructuralPath.IdentityFor(element)
                     );
                 }
             }
@@ -207,7 +208,8 @@ public sealed class ProjectFileRule : IDetectionRule
                     lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                     $"Setting NoWarn to suppress warnings: {value}",
                     element.ToString(),
-                    $"Remove the NoWarn entry and fix the underlying code issues causing {value}. If suppression is truly necessary, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
+                    $"Remove the NoWarn entry and fix the underlying code issues causing {value}. If suppression is truly necessary, add: <!-- slopwatch-ignore: SW005 [your justification here] -->",
+                    StructuralPath.IdentityFor(element)
                 );
             }
         }
@@ -258,7 +260,8 @@ public sealed class ProjectFileRule : IDetectionRule
                     lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                     "TreatWarningsAsErrors is disabled - warnings will not fail the build",
                     element.ToString(),
-                    "Set TreatWarningsAsErrors to true and fix all warnings in the code. If you must disable it, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
+                    "Set TreatWarningsAsErrors to true and fix all warnings in the code. If you must disable it, add: <!-- slopwatch-ignore: SW005 [your justification here] -->",
+                    StructuralPath.IdentityFor(element)
                 );
             }
         }
@@ -309,7 +312,8 @@ public sealed class ProjectFileRule : IDetectionRule
                     lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                     "Nullable reference types are disabled",
                     element.ToString(),
-                    "Set Nullable to 'enable' and fix nullability warnings. If disabling is intentional, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
+                    "Set Nullable to 'enable' and fix nullability warnings. If disabling is intentional, add: <!-- slopwatch-ignore: SW005 [your justification here] -->",
+                    StructuralPath.IdentityFor(element)
                 );
             }
         }
@@ -360,7 +364,8 @@ public sealed class ProjectFileRule : IDetectionRule
                     lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
                     "WarningsAsErrors is empty - no warnings will be treated as errors",
                     element.ToString(),
-                    "Remove the empty WarningsAsErrors element or specify which warnings should be errors. If intentional, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
+                    "Remove the empty WarningsAsErrors element or specify which warnings should be errors. If intentional, add: <!-- slopwatch-ignore: SW005 [your justification here] -->",
+                    StructuralPath.IdentityFor(element)
                 );
             }
         }

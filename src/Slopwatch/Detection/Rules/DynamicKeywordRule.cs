@@ -264,99 +264,13 @@ public sealed class DynamicKeywordRule : IDetectionRule
     /// <summary>
     /// Builds a total path from the compilation unit to the occurrence.
     /// </summary>
-    private static string BuildStructuralPath(SyntaxNode node)
-    {
-        // Choose syntax identity because FileAnalyzer supplies no semantic model. Every node
-        // contributes a segment, including blocks and argument wrappers; unknown syntax never
-        // vanishes. Named declarations use their complete header, which includes static,
-        // explicit interface qualification, generic parameters, ref kinds and checked operators.
-        // This generic declaration fallback does not depend on a second list of member kinds
-        // and ignores differently named siblings. Repeated identical headers (for example,
-        // partial types or repeated namespace blocks) use ordinals within that header group.
-        //
-        // Unnamed nodes use kind + same-kind sibling ordinal. A multi-sibling group's count and
-        // content fingerprint also participate: inserting, replacing or reordering siblings must
-        // invalidate the old group rather than lend its old ordinal to newly introduced code.
-        // This deliberately trades baseline churn for rejecting false exemptions. Identical
-        // before/after source cannot reveal that an occurrence was deleted and recreated; no
-        // stateless syntax identity can recover that history. Hashes retain SHA256's usual
-        // collision assumption. Repeated headers are distinguished even in invalid code.
-        var segments = new List<string>();
-        for (SyntaxNode? current = node; current is not null; current = current.Parent)
-        {
-            var named = current is MemberDeclarationSyntax and not GlobalStatementSyntax
-                or LocalFunctionStatementSyntax;
-            var description = DescribeNode(current);
-            var segment = description + SiblingIdentity(current, named ? description : null);
-            // Length prefixes make paths unambiguous even if source text contains '/' or ':'.
-            segments.Add($"{segment.Length}:{segment}");
-        }
+    /// <remarks>
+    /// Delegates to <see cref="StructuralPath.ForNode"/>, the shared implementation extracted
+    /// from this rule. The path format is unchanged, so existing SW021 baselines and the
+    /// identity test suite continue to match.
+    /// </remarks>
+    private static string BuildStructuralPath(SyntaxNode node) => StructuralPath.ForNode(node);
 
-        segments.Reverse();
-        return string.Join("/", segments);
-    }
-
-    /// <summary>
-    /// Describes every syntax node, with a generic header identity for named declarations.
-    /// </summary>
-    private static string DescribeNode(SyntaxNode node)
-    {
-        if (node is MemberDeclarationSyntax and not GlobalStatementSyntax
-            or LocalFunctionStatementSyntax)
-        {
-            return $"{node.Kind()} {DeclarationHeader(node)}";
-        }
-
-        return node switch
-        {
-            CatchClauseSyntax c => $"catch {c.Declaration?.Type.ToString() ?? "all"} {c.Filter}",
-            AccessorDeclarationSyntax a => $"accessor {a.Keyword.ValueText}",
-            _ => node.Kind().ToString()
-        };
-    }
-
-    /// <summary>
-    /// Retains all declaration header tokens without including bodies or nested members.
-    /// </summary>
-    private static string DeclarationHeader(SyntaxNode declaration)
-    {
-        var tokens = declaration.DescendantTokens(descendIntoChildren: child =>
-            ReferenceEquals(child, declaration) || child is not (
-                BlockSyntax or ArrowExpressionClauseSyntax or AccessorListSyntax
-                or EqualsValueClauseSyntax or MemberDeclarationSyntax));
-        // Preserve token boundaries and literal spelling; no special cases for today's named
-        // declaration forms are needed. A future member form gets this same header fallback.
-        return string.Join(" ", tokens.Select(token => token.Text));
-    }
-
-    /// <summary>
-    /// Identifies a node's position and the contents of its same-kind sibling group.
-    /// </summary>
-    private static string SiblingIdentity(SyntaxNode node, string? namedIdentity = null)
-    {
-        if (node.Parent is null)
-            return "#1of1";
-
-        var siblings = node.Parent.ChildNodes().Where(sibling => sibling.RawKind == node.RawKind
-            && (namedIdentity is null || DescribeNode(sibling) == namedIdentity)).ToList();
-        if (namedIdentity is not null && siblings.Count == 1)
-            return string.Empty;
-
-        var ordinal = siblings.IndexOf(node) + 1;
-        var position = $"#{ordinal}of{siblings.Count}";
-        if (siblings.Count == 1)
-            return position;
-
-        var contents = new StringBuilder();
-        foreach (var sibling in siblings)
-        {
-            var text = sibling.ToString();
-            contents.Append(text.Length).Append(':').Append(text);
-        }
-
-        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(contents.ToString())));
-        return $"{position}@{fingerprint}";
-    }
 
     /// <summary>
     /// Finds the nearest enclosing declaration that can carry a suppression attribute.

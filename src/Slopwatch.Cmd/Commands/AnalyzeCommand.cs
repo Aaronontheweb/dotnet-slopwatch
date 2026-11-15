@@ -154,7 +154,17 @@ public sealed class AnalyzeCommand
 
             if (useBaseline)
             {
-                baseline = await Baseline.BaselineFile.LoadAsync(resolvedBaselinePath, cancellationToken);
+                try
+                {
+                    baseline = await Baseline.BaselineFile.LoadAsync(resolvedBaselinePath, cancellationToken);
+                }
+                catch (Baseline.BaselineVersionException ex)
+                {
+                    // Print the actionable message without a stack trace. This is a user error
+                    // with a known remedy, not an unexpected failure.
+                    await Console.Error.WriteLineAsync(ex.Message);
+                    return 2;
+                }
 
                 if (baseline is null && !UpdateBaseline)
                 {

@@ -100,7 +100,8 @@ public sealed class DisabledTestRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     $"Test method '{method.Identifier.Text}' is disabled with #if false directive",
                     GetMethodSnippet(method),
-                    "Remove the #if false directive and fix the test so it passes. If the test must be disabled, use [SlopwatchSuppress(\"SW001\", \"reason with 20+ chars\")]"
+                    "Remove the #if false directive and fix the test so it passes. If the test must be disabled, use [SlopwatchSuppress(\"SW001\", \"reason with 20+ chars\")]",
+                    StructuralPath.IdentityFor(method)
                 );
                 continue;
             }
@@ -133,7 +134,8 @@ public sealed class DisabledTestRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     message,
                     disabledAttribute.ToString(),
-                    "Remove the Skip/Ignore attribute and fix the test so it passes. If the test must be disabled, use [SlopwatchSuppress(\"SW001\", \"reason with 20+ chars\")]"
+                    "Remove the Skip/Ignore attribute and fix the test so it passes. If the test must be disabled, use [SlopwatchSuppress(\"SW001\", \"reason with 20+ chars\")]",
+                    StructuralPath.IdentityFor(disabledAttribute)
                 );
             }
         }

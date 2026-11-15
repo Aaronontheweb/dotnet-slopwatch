@@ -99,7 +99,8 @@ public sealed class EmptyCatchBlockRule : IDetectionRule
                     location.StartLinePosition.Character + 1,
                     "Empty catch block swallows exceptions without handling",
                     GetCatchSnippet(catchClause),
-                    "Add proper exception handling (log the error, or handle the error condition). If the empty catch is intentional, use [SlopwatchSuppress(\"SW003\", \"reason with 20+ chars\")]"
+                    "Add proper exception handling (log the error, or handle the error condition). If the empty catch is intentional, use [SlopwatchSuppress(\"SW003\", \"reason with 20+ chars\")]",
+                    StructuralPath.IdentityFor(catchClause)
                 );
             }
         }

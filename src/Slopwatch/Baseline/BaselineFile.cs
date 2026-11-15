@@ -25,10 +25,29 @@ public sealed class BaselineFile
     };
 
     /// <summary>
+    /// The schema version this build writes and requires.
+    /// </summary>
+    public const int CurrentVersion = 2;
+
+    /// <summary>
     /// Schema version for forward compatibility.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Version 2 changed the baseline identity for SW001-SW006 from raw syntax text to a
+    /// structural path (see <see cref="StructuralPath"/>). Entries written by version 1 for those
+    /// rules no longer match and must be regenerated with <c>slopwatch init --force</c>.
+    /// SW021 already used a structural identity in version 1, so its entries are unaffected.
+    /// </para>
+    /// <para>
+    /// Loading a version 1 file throws <see cref="BaselineVersionException"/> before analysis
+    /// runs, so the user gets one clear instruction instead of a wall of already-baselined
+    /// findings. A real migration path — recording which identity scheme produced each entry and
+    /// re-deriving old entries — is tracked by issue #107 (version metadata in baselines).
+    /// </para>
+    /// </remarks>
     [JsonPropertyName("version")]
-    public int Version { get; init; } = 1;
+    public int Version { get; init; } = CurrentVersion;
 
     /// <summary>
     /// When this baseline was created.
@@ -88,7 +107,7 @@ public sealed class BaselineFile
     public bool IsBaselined(DetectionResult result, string rootDirectory)
     {
         var relativePath = GetRelativePath(result.FilePath, rootDirectory);
-        return IsBaselined(result.RuleId, relativePath, result.CodeSnippet ?? string.Empty);
+        return IsBaselined(result.RuleId, relativePath, result.BaselineIdentity);
     }
 
     /// <summary>
@@ -101,7 +120,7 @@ public sealed class BaselineFile
     {
         var relativePath = GetRelativePath(result.FilePath, rootDirectory);
         var codeSnippet = result.CodeSnippet ?? string.Empty;
-        var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
+        var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, result.BaselineIdentity);
 
         if (HashLookup.Contains(hash))
             return false;
@@ -155,6 +174,10 @@ public sealed class BaselineFile
     /// <param name="path">Path to the baseline file</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The loaded baseline file, or null if not found</returns>
+    /// <exception cref="BaselineVersionException">
+    /// The file was written by an older schema version whose entry hashes cannot be matched by
+    /// the current identity scheme.
+    /// </exception>
     public static async Task<BaselineFile?> LoadAsync(string path, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(path))
@@ -162,6 +185,14 @@ public sealed class BaselineFile
 
         await using var stream = File.OpenRead(path);
         var baseline = await JsonSerializer.DeserializeAsync<BaselineFile>(stream, JsonOptions, cancellationToken);
+
+        // Fail before any analysis runs. A version 1 baseline hashed SW001-SW006 entries from raw
+        // syntax text; the current code hashes them from a structural path, so every entry would
+        // silently fail to match and the user would see their entire baseline reappear as new
+        // findings with no explanation. Refuse to load instead of producing that wall of noise.
+        if (baseline is not null && baseline.Version < CurrentVersion)
+            throw new BaselineVersionException(path, baseline.Version, CurrentVersion);
+
         return baseline;
     }
 
@@ -231,8 +262,7 @@ public sealed class BaselineFile
         foreach (var result in results)
         {
             var relativePath = GetRelativePath(result.FilePath, rootDirectory);
-            var codeSnippet = result.CodeSnippet ?? string.Empty;
-            var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
+            var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, result.BaselineIdentity);
             currentHashes.Add(hash);
         }
 
@@ -279,8 +309,7 @@ public sealed class BaselineFile
         foreach (var result in results)
         {
             var relativePath = GetRelativePath(result.FilePath, rootDirectory);
-            var codeSnippet = result.CodeSnippet ?? string.Empty;
-            var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
+            var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, result.BaselineIdentity);
 
             if (!HashLookup.Contains(hash))
             {
@@ -290,7 +319,7 @@ public sealed class BaselineFile
                     RuleId = result.RuleId,
                     FilePath = relativePath,
                     LineNumber = result.LineNumber,
-                    CodeSnippet = codeSnippet,
+                    CodeSnippet = result.CodeSnippet ?? string.Empty,
                     Message = result.Message,
                     BaselinedAt = DateTimeOffset.UtcNow
                 };

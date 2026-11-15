@@ -30,6 +30,10 @@ namespace Slopwatch.Detection;
 /// <param name="SuggestedFix">
 /// Optional suggestion for how to fix the detected issue.
 /// </param>
+/// <param name="Identity">
+/// Optional baseline identity for this detection. When null, <paramref name="CodeSnippet"/> is
+/// used as the identity.
+/// </param>
 public sealed record DetectionResult(
     string RuleId,
     string RuleName,
@@ -39,9 +43,21 @@ public sealed record DetectionResult(
     int Column,
     string Message,
     string? CodeSnippet = null,
-    string? SuggestedFix = null
+    string? SuggestedFix = null,
+    string? Identity = null
 )
 {
+    /// <summary>
+    /// The string used as input to the baseline hash.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="CodeSnippet"/> serves double duty as display text and hash input, which forces
+    /// a bad trade: readable snippets truncate (and therefore collide), while precise snippets
+    /// are unreadable. <see cref="Identity"/> separates the two. Rules that build a structural
+    /// identity set it here and keep <see cref="CodeSnippet"/> for humans.
+    /// </remarks>
+    public string BaselineIdentity => Identity ?? CodeSnippet ?? string.Empty;
+
     /// <summary>
     /// Returns a formatted string representation suitable for console output.
     /// </summary>
