@@ -193,6 +193,151 @@ class C
         return "class C{" + methods + "}";
     }
 
+    [Fact]
+    public void XmlIdentitiesMatchUncachedIdentities()
+    {
+        // SW005/SW006 use the XML path, which had no cache at all: every finding re-enumerated,
+        // serialized, and fingerprinted its whole sibling group.
+        const string xml = @"<Project>
+  <PropertyGroup>
+    <NoWarn>CS1591</NoWarn>
+    <NoWarn>CS0618</NoWarn>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+</Project>";
+
+        var doc = System.Xml.Linq.XDocument.Parse(xml);
+        var cache = new StructuralPathCache();
+        var compared = 0;
+
+        foreach (var element in doc.Descendants())
+        {
+            Assert.Equal(
+                StructuralPath.IdentityFor(element),
+                StructuralPath.IdentityFor(element, cache));
+            compared++;
+        }
+
+        Assert.True(compared > 0, "Fixture produced no elements to compare.");
+    }
+
+    [Fact]
+    public void XmlIdenticalSiblingsReceiveDistinctIdentities()
+    {
+        const string xml = @"<Project>
+  <PropertyGroup>
+    <NoWarn>CS1591</NoWarn>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+</Project>";
+
+        var doc = System.Xml.Linq.XDocument.Parse(xml);
+        var cache = new StructuralPathCache();
+        var elements = doc.Descendants()
+            .Where(e => e.Name.LocalName == "NoWarn")
+            .ToList();
+
+        Assert.Equal(2, elements.Count);
+
+        var identities = elements
+            .Select(e => StructuralPath.IdentityFor(e, cache))
+            .ToList();
+
+        Assert.NotEqual(identities[0], identities[1]);
+    }
+
+    [Fact]
+    public void XmlFindingsAllocateLinearly()
+    {
+        // 57 GB at 2,000 findings before the XML cache existed.
+        var small = MeasureXmlAllocation(BuildXml(500));
+        var large = MeasureXmlAllocation(BuildXml(2000));
+
+        Assert.True(
+            large < small * 6.0,
+            $"Allocation grew from {small:N0} bytes at 500 findings to {large:N0} bytes at 2000 "
+            + $"(ratio {large / (double)small:F2}, expected < 6.0 for a 4x input increase). "
+            + "XML sibling groups are likely being re-fingerprinted per finding.");
+    }
+
+    private static long MeasureXmlAllocation(string xml)
+    {
+        RunXmlRule(xml);
+        RunXmlRule(xml);
+
+        var best = long.MaxValue;
+        for (var i = 0; i < 3; i++)
+        {
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            RunXmlRule(xml);
+            var after = GC.GetAllocatedBytesForCurrentThread();
+            best = Math.Min(best, after - before);
+        }
+
+        return best;
+    }
+
+    private static int RunXmlRule(string xml)
+    {
+        var context = new DetectionContext("/tmp/slopwatch-alloc/Test.csproj", "Test.csproj", xml, null, false);
+        var count = 0;
+        var enumerator = new ProjectFileRule().AnalyzeAsync(context).GetAsyncEnumerator();
+        try
+        {
+            while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                count++;
+        }
+        finally
+        {
+            enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
+        return count;
+    }
+
+    private static string BuildXml(int count)
+    {
+        var elements = string.Concat(Enumerable.Repeat("<NoWarn>CS1591</NoWarn>", count));
+        return "<Project><PropertyGroup>" + elements + "</PropertyGroup></Project>";
+    }
+
+    [Fact]
+    public void PragmaOrdinalLookupIsNotQuadraticInCpu()
+    {
+        // Fingerprinting was cached but every directive still ran Array.FindIndex over the same
+        // member array: 2,001,000 comparisons at 2,000 directives, 3.47 seconds at 16,000.
+        // Allocation tests cannot see this because the scan allocates nothing, so measure time.
+        var small = MeasureRuleTime(BuildPragmas(2000), new WarningSuppressRule());
+        var large = MeasureRuleTime(BuildPragmas(8000), new WarningSuppressRule());
+
+        // 4x input. Linear work is ~4x; quadratic is ~16x. Allow generous headroom for noise.
+        Assert.True(
+            large < small * 8.0,
+            $"Analysis took {small.TotalMilliseconds:F0} ms at 2,000 directives and "
+            + $"{large.TotalMilliseconds:F0} ms at 8,000 (ratio {large.TotalMilliseconds / small.TotalMilliseconds:F2}, "
+            + "expected < 8.0 for a 4x input increase). Directive ordinals are likely being "
+            + "rescanned per directive.");
+    }
+
+    private static TimeSpan MeasureRuleTime(string code, IDetectionRule rule)
+    {
+        var tree = CSharpSyntaxTree.ParseText(code);
+        RunRule(tree, code, rule);
+        RunRule(tree, code, rule);
+
+        var best = TimeSpan.MaxValue;
+        for (var i = 0; i < 3; i++)
+        {
+            var start = System.Diagnostics.Stopwatch.GetTimestamp();
+            RunRule(tree, code, rule);
+            var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(start);
+            if (elapsed < best)
+                best = elapsed;
+        }
+
+        return best;
+    }
+
     private static long MeasureRuleAllocation(string code, IDetectionRule rule)
     {
         var tree = CSharpSyntaxTree.ParseText(code);

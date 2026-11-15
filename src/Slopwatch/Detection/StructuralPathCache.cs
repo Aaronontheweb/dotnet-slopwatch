@@ -6,6 +6,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -34,6 +35,9 @@ public sealed class StructuralPathCache
 
     private readonly Dictionary<DirectiveKey, StructuralPath.DirectiveGroup> _directives =
         new(DirectiveKeyComparer.Instance);
+
+    private readonly Dictionary<XmlKey, XmlGroup> _xmlGroups =
+        new(XmlKeyComparer.Instance);
 
     /// <summary>
     /// Returns the cached group information for a node's sibling group, computing it on first use.
@@ -187,7 +191,7 @@ public sealed class StructuralPathCache
     internal StructuralPath.DirectiveGroup GetDirectiveGroup(SyntaxNode? owner, StructuredTriviaSyntax trivia)
     {
         if (owner is null)
-            return new StructuralPath.DirectiveGroup(new[] { trivia }, null);
+            return new StructuralPath.DirectiveGroup(new[] { trivia }, null, EmptyDirectiveOrdinals);
 
         var key = new DirectiveKey(owner, trivia.RawKind);
         if (_directives.TryGetValue(key, out var cached))
@@ -206,10 +210,17 @@ public sealed class StructuralPathCache
             ? null
             : StructuralPath.FingerprintForCache(members.Select(m => m.ToString()));
 
-        var group = new StructuralPath.DirectiveGroup(members, fingerprint);
+        var ordinals = new Dictionary<StructuredTriviaSyntax, int>(ReferenceEqualityComparer.Instance);
+        for (var i = 0; i < members.Length; i++)
+            ordinals[members[i]] = i + 1;
+
+        var group = new StructuralPath.DirectiveGroup(members, fingerprint, ordinals);
         _directives[key] = group;
         return group;
     }
+
+    private static readonly Dictionary<StructuredTriviaSyntax, int> EmptyDirectiveOrdinals =
+        new(ReferenceEqualityComparer.Instance);
 
     /// <summary>
     /// Identifies a directive group: its owning node and the trivia kind.
@@ -230,6 +241,77 @@ public sealed class StructuralPathCache
             HashCode.Combine(
                 System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(key.Owner),
                 key.RawKind);
+    }
+
+    /// <summary>
+    /// Returns the cached sibling group for an XML element.
+    /// </summary>
+    /// <remarks>
+    /// XML has no declaration headers, so a group is simply the same-name siblings under one
+    /// parent. Without this cache every finding re-enumerates, serializes, and fingerprints its
+    /// whole group: 57 GB at 2,000 findings.
+    /// </remarks>
+    internal XmlGroup GetXmlGroup(XElement element)
+    {
+        var parent = element.Parent;
+        if (parent is null)
+            return new XmlGroup(1, 1, null);
+
+        var key = new XmlKey(parent, element.Name);
+        if (_xmlGroups.TryGetValue(key, out var cached))
+        {
+            var ordinal = cached.Ordinals is not null && cached.Ordinals.TryGetValue(element, out var found)
+                ? found
+                : 1;
+            return new XmlGroup(ordinal, cached.Count, cached.Fingerprint);
+        }
+
+        var siblings = parent.Elements(element.Name).ToList();
+        if (siblings.Count == 0)
+            siblings.Add(element);
+
+        var fingerprint = siblings.Count == 1
+            ? null
+            : StructuralPath.FingerprintForCache(siblings.Select(s => s.ToString()));
+
+        var ordinals = new Dictionary<XElement, int>(ReferenceEqualityComparer.Instance);
+        for (var i = 0; i < siblings.Count; i++)
+            ordinals[siblings[i]] = i + 1;
+
+        _xmlGroups[key] = new XmlGroup(0, siblings.Count, fingerprint, ordinals);
+
+        var own = ordinals.TryGetValue(element, out var position) ? position : 1;
+        return new XmlGroup(own, siblings.Count, fingerprint);
+    }
+
+    /// <summary>
+    /// An XML sibling group's shared data plus per-member ordinals.
+    /// </summary>
+    internal readonly record struct XmlGroup(
+        int Ordinal,
+        int Count,
+        string? Fingerprint,
+        Dictionary<XElement, int>? Ordinals = null);
+
+    /// <summary>
+    /// Identifies an XML sibling group: its parent and the fully qualified element name.
+    /// </summary>
+    private readonly record struct XmlKey(XElement Parent, XName Name);
+
+    /// <summary>
+    /// Compares XML keys by parent reference, so distinct parents never share a group.
+    /// </summary>
+    private sealed class XmlKeyComparer : IEqualityComparer<XmlKey>
+    {
+        public static readonly XmlKeyComparer Instance = new();
+
+        public bool Equals(XmlKey x, XmlKey y) =>
+            ReferenceEquals(x.Parent, y.Parent) && x.Name == y.Name;
+
+        public int GetHashCode(XmlKey key) =>
+            HashCode.Combine(
+                System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(key.Parent),
+                key.Name);
     }
 
     /// <summary>

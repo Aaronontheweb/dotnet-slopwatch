@@ -31,7 +31,7 @@ public class XmlStructuralPathTests
 
         var paths = doc.Descendants()
             .Where(e => e.Name.LocalName == "NoWarn")
-            .Select(StructuralPath.ForXmlElement)
+            .Select(e => StructuralPath.ForXmlElement(e))
             .ToList();
 
         Assert.Equal(2, paths.Count);
@@ -52,7 +52,7 @@ public class XmlStructuralPathTests
 
         var paths = doc.Descendants()
             .Where(e => e.Name.LocalName == "NoWarn")
-            .Select(StructuralPath.ForXmlElement)
+            .Select(e => StructuralPath.ForXmlElement(e))
             .ToList();
 
         Assert.Equal(2, paths.Count);
@@ -73,7 +73,7 @@ public class XmlStructuralPathTests
 
         var paths = doc.Descendants()
             .Where(e => e.Name.LocalName == "Item")
-            .Select(StructuralPath.ForXmlElement)
+            .Select(e => StructuralPath.ForXmlElement(e))
             .ToList();
 
         Assert.Equal(2, paths.Count);

@@ -69,6 +69,10 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
         // Parse XML suppressions from content
         var suppressions = ParseXmlSuppressions(context.Content);
 
+        // One cache per analysis: XML sibling groups are enumerated and fingerprinted once
+        // instead of once per finding.
+        var identityCache = new StructuralPathCache();
+
         XDocument document;
         try
         {
@@ -84,7 +88,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
         var isDirectoryPackagesProps = context.FileName.Equals("Directory.Packages.props", StringComparison.OrdinalIgnoreCase);
 
         // Check for VersionOverride (always slop, even in Directory.Packages.props though it shouldn't be there)
-        await foreach (var result in AnalyzeVersionOverride(context, document, suppressions, cancellationToken))
+        await foreach (var result in AnalyzeVersionOverride(context, document, suppressions, identityCache, cancellationToken))
         {
             yield return result;
         }
@@ -100,7 +104,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
 
         if (cpmEnabled)
         {
-            await foreach (var result in AnalyzeVersionAttribute(context, document, suppressions, cancellationToken))
+            await foreach (var result in AnalyzeVersionAttribute(context, document, suppressions, identityCache, cancellationToken))
             {
                 yield return result;
             }
@@ -235,6 +239,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
         DetectionContext context,
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
+        StructuralPathCache identityCache,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var packageReferences = document.Descendants()
@@ -277,7 +282,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
                 $"Remove VersionOverride='{version}' and update the version in Directory.Packages.props instead. If override is required, add: <!-- slopwatch-ignore: SW006 [your justification here] -->"
                 )
                 {
-                    Identity = StructuralPath.IdentityFor(element)
+                    Identity = StructuralPath.IdentityFor(element, identityCache)
                 };
         }
 
@@ -291,6 +296,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
         DetectionContext context,
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
+        StructuralPathCache identityCache,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var packageReferences = document.Descendants()
@@ -346,7 +352,7 @@ public sealed class PackageVersionOverrideRule : IDetectionRule
                 $"Remove Version='{version}' from PackageReference and add '<PackageVersion Include=\"{packageName}\" Version=\"{version}\" />' to Directory.Packages.props. If inline version is required, add: <!-- slopwatch-ignore: SW006 [your justification here] -->"
                 )
                 {
-                    Identity = StructuralPath.IdentityFor(element)
+                    Identity = StructuralPath.IdentityFor(element, identityCache)
                 };
         }
 

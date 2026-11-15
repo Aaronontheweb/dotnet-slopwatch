@@ -96,7 +96,7 @@ public static class StructuralPath
     /// ordinal, with a group fingerprint when the group has more than one member. The same
     /// totality argument applies: an element name nobody anticipated still contributes a segment.
     /// </remarks>
-    public static string ForXmlElement(XElement element)
+    public static string ForXmlElement(XElement element, StructuralPathCache? cache = null)
     {
         ArgumentNullException.ThrowIfNull(element);
 
@@ -104,13 +104,6 @@ public static class StructuralPath
         for (XElement? current = element; current is not null; current = current.Parent)
         {
             var name = current.Name.LocalName;
-            // Select siblings by fully qualified name, not local name. Elements(XName) with a bare
-            // string matches only no-namespace elements, so a namespaced document — every real
-            // .csproj carries the MSBuild namespace — would see each element as its own sole
-            // sibling and every occurrence would collapse to #1of1.
-            var siblings = current.Parent is null
-                ? new List<XElement> { current }
-                : current.Parent.Elements(current.Name).ToList();
 
             // The namespace participates in the segment text. Two elements can share a local name
             // while living in different namespaces; without this they would render identically
@@ -119,23 +112,50 @@ public static class StructuralPath
                 ? name
                 : $"{{{current.Name.NamespaceName}}}{name}";
 
-            var ordinal = siblings.FindIndex(sibling => ReferenceEquals(sibling, current)) + 1;
-            if (ordinal <= 0)
-            {
-                // Defensive: the element was not found in its own sibling list.
-                siblings = new List<XElement> { current };
-                ordinal = 1;
-            }
+            // Select siblings by fully qualified name, not local name. Elements(XName) with a bare
+            // string matches only no-namespace elements, so a namespaced document — every real
+            // .csproj carries the MSBuild namespace — would see each element as its own sole
+            // sibling and every occurrence would collapse to #1of1.
+            //
+            // Without a cache this enumerates, serializes, and fingerprints the whole group once
+            // per finding, which is quadratic: 57 GB at 2,000 findings.
+            var group = cache is null
+                ? BuildXmlGroup(current)
+                : cache.GetXmlGroup(current);
 
-            var position = $"#{ordinal}of{siblings.Count}";
-            var segment = siblings.Count == 1
+            var position = $"#{group.Ordinal}of{group.Count}";
+            var segment = group.Count == 1
                 ? $"{qualified}{position}"
-                : $"{qualified}{position}@{Fingerprint(siblings.Select(sibling => sibling.ToString()))}";
+                : $"{qualified}{position}@{group.Fingerprint}";
             segments.Add($"{segment.Length}:{segment}");
         }
 
         segments.Reverse();
         return string.Join("/", segments);
+    }
+
+    /// <summary>
+    /// Builds an XML element's sibling group without caching.
+    /// </summary>
+    private static StructuralPathCache.XmlGroup BuildXmlGroup(XElement element)
+    {
+        var siblings = element.Parent is null
+            ? new List<XElement> { element }
+            : element.Parent.Elements(element.Name).ToList();
+
+        var ordinal = siblings.FindIndex(sibling => ReferenceEquals(sibling, element)) + 1;
+        if (ordinal <= 0)
+        {
+            // Defensive: the element was not found in its own sibling list.
+            siblings = new List<XElement> { element };
+            ordinal = 1;
+        }
+
+        var fingerprint = siblings.Count == 1
+            ? null
+            : Fingerprint(siblings.Select(sibling => sibling.ToString()));
+
+        return new StructuralPathCache.XmlGroup(ordinal, siblings.Count, fingerprint);
     }
 
     /// <summary>
@@ -162,10 +182,10 @@ public static class StructuralPath
     /// </summary>
     /// <param name="element">The element to identify.</param>
     /// <returns>A string suitable for hashing as a baseline identity.</returns>
-    public static string IdentityFor(XElement element)
+    public static string IdentityFor(XElement element, StructuralPathCache? cache = null)
     {
         ArgumentNullException.ThrowIfNull(element);
-        return $"{ForXmlElement(element)}\n{element}";
+        return $"{ForXmlElement(element, cache)}\n{element}";
     }
 
     /// <summary>
@@ -285,15 +305,20 @@ public static class StructuralPath
             ? null
             : Fingerprint(sameKind.Select(candidate => candidate.ToString()));
 
-        return new DirectiveGroup(sameKind, fingerprint);
+        var ordinals = new Dictionary<StructuredTriviaSyntax, int>(ReferenceEqualityComparer.Instance);
+        for (var i = 0; i < sameKind.Length; i++)
+            ordinals[sameKind[i]] = i + 1;
+
+        return new DirectiveGroup(sameKind, fingerprint, ordinals);
     }
 
     /// <summary>
-    /// A directive group's members and its shared fingerprint.
+    /// A directive group's members, its shared fingerprint, and per-member ordinals.
     /// </summary>
     internal readonly record struct DirectiveGroup(
         StructuredTriviaSyntax[] Members,
-        string? Fingerprint);
+        string? Fingerprint,
+        Dictionary<StructuredTriviaSyntax, int> Ordinals);
 
     /// <summary>
     /// Builds the path for a structured trivia node, anchored at the node that owns its token.
@@ -310,9 +335,10 @@ public static class StructuralPath
             ? BuildDirectiveGroup(owner, trivia)
             : cache.GetDirectiveGroup(owner, trivia);
 
-        var ordinal = Array.FindIndex(group.Members, candidate => candidate.Span == trivia.Span) + 1;
-        if (ordinal <= 0)
-            ordinal = 1;
+        // Use the cached ordinal map rather than scanning the member array. Array.FindIndex over
+        // N members, once per directive, is N^2 comparisons: 2,001,000 at 2,000 directives, and
+        // 3.47 seconds at 16,000. Allocation tests cannot see this because it allocates nothing.
+        var ordinal = group.Ordinals.TryGetValue(trivia, out var found) ? found : 1;
 
         var description = DescribeNode(trivia);
         var position = $"#{ordinal}of{group.Members.Length}";
