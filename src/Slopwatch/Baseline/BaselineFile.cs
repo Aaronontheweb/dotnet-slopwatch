@@ -215,13 +215,19 @@ public sealed class BaselineFile
             document = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken);
         }
 
-        var baseline = document?.Deserialize<BaselineFile>(JsonOptions);
-        if (baseline is null)
+        if (document is null)
             return null;
 
-        var declaredVersion = document is JsonObject obj && obj.TryGetPropertyValue("version", out var versionNode)
-            ? versionNode?.GetValue<int>()
-            : (int?)null;
+        // Resolve the declared version BEFORE deserializing. Deserializing first would let a
+        // malformed version value (null, a string, an object) surface as a raw JsonException from
+        // the serializer instead of the actionable "regenerate your baseline" message. A version
+        // that is present but not an integer is treated as unreadable, which is the same remedy.
+        int? declaredVersion = null;
+        if (document is JsonObject obj && obj.TryGetPropertyValue("version", out var versionNode))
+        {
+            if (versionNode is JsonValue value && value.TryGetValue<int>(out var parsed))
+                declaredVersion = parsed;
+        }
 
         // Fail before any analysis runs. A version 1 baseline hashed SW001-SW006 entries from raw
         // syntax text; the current code hashes them from a structural path, so every entry would
@@ -233,7 +239,7 @@ public sealed class BaselineFile
         if (declaredVersion < CurrentVersion)
             throw new BaselineVersionException(path, declaredVersion.Value, CurrentVersion);
 
-        return baseline;
+        return document.Deserialize<BaselineFile>(JsonOptions);
     }
 
     /// <summary>

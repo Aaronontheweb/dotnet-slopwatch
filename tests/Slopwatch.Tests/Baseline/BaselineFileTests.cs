@@ -394,6 +394,39 @@ public class BaselineFileTests
         }
     }
 
+    [Theory]
+    [InlineData("\"two\"")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    public async Task LoadAsync_TreatsUnreadableVersionAsOutdated(string versionJson)
+    {
+        // A version that is present but not an integer cannot be matched against the current
+        // scheme. It must produce the same actionable "regenerate" message as a version 1 file,
+        // not a raw JsonException from the serializer. Deserializing before the version check
+        // would surface the serializer's error instead.
+        var path = Path.Combine(Path.GetTempPath(), $"slopwatch-badversion-{Guid.NewGuid():N}.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, $$"""
+                {
+                  "version": {{versionJson}},
+                  "entries": []
+                }
+                """);
+
+            var ex = await Assert.ThrowsAsync<BaselineVersionException>(
+                () => BaselineFile.LoadAsync(path));
+
+            Assert.Equal(BaselineFile.CurrentVersion, ex.RequiredVersion);
+            Assert.Contains("slopwatch init --force", ex.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public async Task LoadAsync_AcceptsCurrentSchemaVersion()
     {
