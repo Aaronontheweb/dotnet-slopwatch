@@ -487,6 +487,70 @@ public class BaselineFileTests
     }
 
     [Fact]
+    public void AddEntry_AllocatesLinearlyInEntryCount()
+    {
+        // AddEntry used to invalidate the hash lookup after every insertion, so the next call
+        // rebuilt it from every preceding entry: creating a baseline with N findings did O(N^2)
+        // work. Measured 1.70 GB allocated at 8,000 entries versus 5.63 MB when the set is kept
+        // current. The rule-allocation tests never exercise baseline creation, so this guard is
+        // the only thing that would catch a regression.
+        var small = MeasureAddEntryAllocation(1000);
+        var large = MeasureAddEntryAllocation(4000);
+
+        // Entry count quadruples. Quadratic growth would be ~16x; allow generous headroom.
+        Assert.True(
+            large < small * 8.0,
+            $"Baseline creation allocated {small:N0} bytes at 1,000 entries and {large:N0} bytes "
+            + $"at 4,000 (ratio {large / (double)small:F2}, expected < 8.0 for a 4x increase). "
+            + "The hash lookup is likely being rebuilt per insertion.");
+    }
+
+    /// <summary>
+    /// Measures bytes allocated while adding <paramref name="count"/> distinct entries.
+    /// </summary>
+    private static long MeasureAddEntryAllocation(int count)
+    {
+        var results = new List<DetectionResult>(count);
+        for (var i = 0; i < count; i++)
+        {
+            results.Add(new DetectionResult(
+                RuleId: "SW004",
+                RuleName: "Test Rule",
+                Severity: DetectionSeverity.Warning,
+                FilePath: $"/root/src/File{i}.cs",
+                LineNumber: i + 1,
+                Column: 1,
+                Message: "Test message",
+                CodeSnippet: $"Task.Delay({i})")
+            {
+                Identity = $"identity-{i}"
+            });
+        }
+
+        // Warm up so JIT and first-touch costs land outside the measured window.
+        RunAddEntry(results);
+        RunAddEntry(results);
+
+        var best = long.MaxValue;
+        for (var i = 0; i < 3; i++)
+        {
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            RunAddEntry(results);
+            var after = GC.GetAllocatedBytesForCurrentThread();
+            best = Math.Min(best, after - before);
+        }
+
+        return best;
+    }
+
+    private static void RunAddEntry(List<DetectionResult> results)
+    {
+        var baseline = new BaselineFile();
+        foreach (var result in results)
+            baseline.AddEntry(result, "/root");
+    }
+
+    [Fact]
     public async Task LoadAsync_AcceptsCurrentSchemaVersion()
     {
         var path = Path.Combine(Path.GetTempPath(), $"slopwatch-v2-{Guid.NewGuid():N}.json");

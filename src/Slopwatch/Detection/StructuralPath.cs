@@ -402,12 +402,102 @@ public static class StructuralPath
         foreach (var sibling in siblings)
         {
             var span = sibling.Span;
-            AppendLengthPrefix(hash, span.Length, lengthBuffer);
+            // Line endings are normalized before hashing. The fingerprint is a hex digest, so the
+            // normalization ComputeStructuralHash applies to the identity string cannot reach it:
+            // a baseline created on Linux (LF) would never match the same source on Windows
+            // (CRLF). Normalizing here keeps the digest platform-independent.
+            AppendLengthPrefix(hash, NormalizedLength(sourceText, span.Start, span.Length), lengthBuffer);
             hash.AppendData(":"u8);
-            AppendUtf8FromSource(hash, sourceText, span.Start, span.Length, charBuffer);
+            AppendNormalizedUtf8(hash, sourceText, span.Start, span.Length, charBuffer);
         }
 
         return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    /// <summary>
+    /// Counts a span's characters after line-ending normalization.
+    /// </summary>
+    /// <remarks>
+    /// <c>\r\n</c> collapses to a single <c>\n</c>, and a lone <c>\r</c> becomes <c>\n</c>. The
+    /// length prefix must describe the normalized text, otherwise the digest would still differ
+    /// between platforms even though the bytes matched.
+    /// </remarks>
+    private static int NormalizedLength(
+        Microsoft.CodeAnalysis.Text.SourceText sourceText,
+        int start,
+        int length)
+    {
+        var normalized = 0;
+        for (var i = 0; i < length; i++)
+        {
+            normalized++;
+            if (sourceText[start + i] == '\r' && i + 1 < length && sourceText[start + i + 1] == '\n')
+                i++;
+        }
+
+        return normalized;
+    }
+
+    /// <summary>
+    /// Appends a source span's UTF-8 bytes to an incremental hash in bounded chunks, with line
+    /// endings normalized to <c>\n</c>.
+    /// </summary>
+    /// <remarks>
+    /// Chunk boundaries never split a surrogate pair: a trailing high surrogate is carried into
+    /// the next chunk.
+    /// </remarks>
+    private static void AppendNormalizedUtf8(
+        IncrementalHash hash,
+        Microsoft.CodeAnalysis.Text.SourceText sourceText,
+        int start,
+        int length,
+        char[] charBuffer)
+    {
+        Span<byte> byteBuffer = stackalloc byte[ChunkChars * 3];
+        var count = 0;
+        var pendingCarriageReturn = false;
+
+        for (var i = 0; i < length; i++)
+        {
+            var c = sourceText[start + i];
+
+            if (pendingCarriageReturn)
+            {
+                pendingCarriageReturn = false;
+                // \r\n collapses to one \n; a lone \r already emitted its \n.
+                if (c == '\n')
+                    continue;
+            }
+
+            if (c == '\r')
+            {
+                pendingCarriageReturn = true;
+                c = '\n';
+            }
+
+            charBuffer[count++] = c;
+
+            if (count == ChunkChars)
+            {
+                var flushCount = count;
+                // Never split a surrogate pair across a flush.
+                if (char.IsHighSurrogate(charBuffer[count - 1]))
+                    flushCount--;
+
+                var written = Encoding.UTF8.GetBytes(charBuffer.AsSpan(0, flushCount), byteBuffer);
+                hash.AppendData(byteBuffer[..written]);
+
+                if (flushCount != count)
+                    charBuffer[0] = charBuffer[count - 1];
+                count -= flushCount;
+            }
+        }
+
+        if (count > 0)
+        {
+            var written = Encoding.UTF8.GetBytes(charBuffer.AsSpan(0, count), byteBuffer);
+            hash.AppendData(byteBuffer[..written]);
+        }
     }
 
     /// <summary>

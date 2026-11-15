@@ -156,9 +156,12 @@ public sealed class BaselineFile
         };
 
         Entries.Add(entry);
-        // Invalidate rather than mutate: HashLookup may have been materialized before this entry
-        // existed, and mutating a cached set leaves it inconsistent with Entries.
-        _hashLookup = null;
+        // Mutate the lookup when it is already materialized. Invalidating it instead would make
+        // the next AddEntry rebuild the set from every preceding entry, so creating a baseline
+        // with N findings did O(N^2) work: measured 1.70 GB allocated at 8,000 entries versus
+        // 5.63 MB when the set is kept current. The set is only ever derived from Entries, so
+        // adding the new hash keeps it consistent.
+        _hashLookup?.Add(hash);
         UpdatedAt = DateTimeOffset.UtcNow;
 
         return true;

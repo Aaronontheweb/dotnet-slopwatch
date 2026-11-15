@@ -114,11 +114,92 @@ public class DynamicKeywordFingerprintTests
     /// </summary>
     private static string ReferenceFingerprint(IEnumerable<string> texts)
     {
+        // Line endings are normalized before hashing. The fingerprint is a hex digest, so the
+        // normalization ComputeStructuralHash applies to the identity string cannot reach inside
+        // it: without this, a baseline created on Linux (LF) would never match the same source on
+        // Windows (CRLF). This is a deliberate deviation from the original StringBuilder
+        // implementation, which hashed raw spans.
         var contents = new StringBuilder();
         foreach (var text in texts)
-            contents.Append(text.Length).Append(':').Append(text);
+        {
+            var normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
+            contents.Append(normalized.Length).Append(':').Append(normalized);
+        }
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(contents.ToString())));
+    }
+
+    [Fact]
+    public void FingerprintIsIdenticalForLfAndCrlfSources()
+    {
+        // A baseline created on Linux must match the same source on Windows. The fingerprint is a
+        // hex digest, so the line-ending normalization ComputeStructuralHash applies to the
+        // identity string cannot reach inside it. Without normalization here, every multi-sibling
+        // group would produce a different digest per platform and baselines would not be portable.
+        //
+        // The siblings must SPAN MULTIPLE LINES for this to be meaningful: a group of one-line
+        // statements contains no line breaks inside its spans, so it fingerprints identically
+        // whether or not normalization happens. Two multiline methods are the shape that exposes
+        // the difference.
+        const string lf = """
+            class C
+            {
+                void A()
+                {
+                    dynamic a = 1;
+                }
+
+                void B()
+                {
+                    dynamic b = 2;
+                }
+            }
+            """;
+        var crlf = lf.Replace("\n", "\r\n");
+
+        var lfSiblings = MultiSiblingGroups(lf);
+        var crlfSiblings = MultiSiblingGroups(crlf);
+
+        Assert.NotEmpty(lfSiblings);
+        Assert.Equal(lfSiblings.Count, crlfSiblings.Count);
+
+        // Guard the premise: at least one compared group must actually contain a line break,
+        // otherwise this test would pass for the wrong reason.
+        var comparedMultiline = 0;
+        for (var i = 0; i < lfSiblings.Count; i++)
+        {
+            if (lfSiblings[i].Any(sibling => sibling.ToString().Contains('\n')))
+                comparedMultiline++;
+
+            Assert.Equal(
+                InvokeFingerprint(lfSiblings[i]),
+                InvokeFingerprint(crlfSiblings[i]));
+        }
+
+        Assert.True(
+            comparedMultiline > 0,
+            "No compared sibling group spanned multiple lines, so line-ending normalization was "
+            + "never exercised.");
+    }
+
+    /// <summary>
+    /// Collects every multi-sibling group in a source text, in a stable order.
+    /// </summary>
+    private static List<List<SyntaxNode>> MultiSiblingGroups(string code)
+    {
+        var root = CSharpSyntaxTree.ParseText(code).GetRoot();
+        var groups = new List<List<SyntaxNode>>();
+        foreach (var parent in root.DescendantNodes())
+        {
+            foreach (var group in parent.ChildNodes().GroupBy(child => child.RawKind))
+            {
+                var siblings = group.ToList();
+                if (siblings.Count >= 2)
+                    groups.Add(siblings);
+            }
+        }
+
+        return groups;
     }
 
     /// <summary>
