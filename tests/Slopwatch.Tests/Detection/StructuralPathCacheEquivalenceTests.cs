@@ -158,8 +158,8 @@ class C
         // Structured trivia reports a null Parent, so it takes a separate cache path. Without
         // caching that path, every directive re-enumerates and re-fingerprints the whole group:
         // measured 1.1 GB at 2,000 directives with 3.7x/3.8x growth per doubling.
-        var small = MeasureRuleAllocation(BuildPragmas(500));
-        var large = MeasureRuleAllocation(BuildPragmas(2000));
+        var small = MeasureRuleAllocation(BuildPragmas(500), new WarningSuppressRule());
+        var large = MeasureRuleAllocation(BuildPragmas(2000), new WarningSuppressRule());
 
         Assert.True(
             large < small * 6.0,
@@ -168,17 +168,42 @@ class C
             + "Structured-trivia fingerprints are likely being recomputed per directive.");
     }
 
-    private static long MeasureRuleAllocation(string code)
+    [Fact]
+    public void DifferentlyNamedMethodsAllocateLinearly()
+    {
+        // Each method has a distinct declaration header, so keying the cache on the header made
+        // every method its own group — and each group rescanned all N siblings to build itself.
+        // One delay per method therefore triggered N^2 header work: 3.47 GB at 2,000 methods.
+        var small = MeasureRuleAllocation(BuildNamedMethods(500), new TimeoutJigglingRule());
+        var large = MeasureRuleAllocation(BuildNamedMethods(2000), new TimeoutJigglingRule());
+
+        Assert.True(
+            large < small * 6.0,
+            $"Allocation grew from {small:N0} bytes at 500 methods to {large:N0} bytes at 2000 "
+            + $"(ratio {large / (double)small:F2}, expected < 6.0 for a 4x input increase). "
+            + "Sibling partitions are likely being rebuilt per declaration header.");
+    }
+
+    private static string BuildNamedMethods(int count)
+    {
+        var methods = string.Concat(Enumerable.Range(0, count).Select(i =>
+            $"[Fact]async System.Threading.Tasks.Task T{i}()" +
+            "{await System.Threading.Tasks.Task.Delay(100);}"));
+
+        return "class C{" + methods + "}";
+    }
+
+    private static long MeasureRuleAllocation(string code, IDetectionRule rule)
     {
         var tree = CSharpSyntaxTree.ParseText(code);
-        RunRule(tree, code);
-        RunRule(tree, code);
+        RunRule(tree, code, rule);
+        RunRule(tree, code, rule);
 
         var best = long.MaxValue;
         for (var i = 0; i < 3; i++)
         {
             var before = GC.GetAllocatedBytesForCurrentThread();
-            RunRule(tree, code);
+            RunRule(tree, code, rule);
             var after = GC.GetAllocatedBytesForCurrentThread();
             best = Math.Min(best, after - before);
         }
@@ -186,11 +211,11 @@ class C
         return best;
     }
 
-    private static int RunRule(SyntaxTree tree, string code)
+    private static int RunRule(SyntaxTree tree, string code, IDetectionRule rule)
     {
-        var context = new DetectionContext(FilePath, "TestFile.cs", code, tree, false);
+        var context = new DetectionContext(FilePath, "TestFile.cs", code, tree, true);
         var count = 0;
-        var enumerator = new WarningSuppressRule().AnalyzeAsync(context).GetAsyncEnumerator();
+        var enumerator = rule.AnalyzeAsync(context).GetAsyncEnumerator();
         try
         {
             while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())

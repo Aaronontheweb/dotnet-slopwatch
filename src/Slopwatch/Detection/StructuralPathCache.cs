@@ -30,7 +30,7 @@ namespace Slopwatch.Detection;
 /// </remarks>
 public sealed class StructuralPathCache
 {
-    private readonly Dictionary<GroupKey, CachedGroup> _groups = new(GroupKeyComparer.Instance);
+    private readonly Dictionary<PartitionKey, Partition> _partitions = new(PartitionKeyComparer.Instance);
 
     private readonly Dictionary<DirectiveKey, StructuralPath.DirectiveGroup> _directives =
         new(DirectiveKeyComparer.Instance);
@@ -49,51 +49,80 @@ public sealed class StructuralPathCache
         if (parent is null)
             return new GroupInfo(1, 1, null);
 
-        var key = new GroupKey(parent, node.RawKind, namedIdentity);
-        if (!_groups.TryGetValue(key, out var cached))
+        // Partition the parent's children by kind ONCE, then by header within that kind. Keying
+        // the cache on the header instead would make each differently named sibling its own group,
+        // and each of those groups would rescan every sibling to build itself: N methods with one
+        // delay each meant N groups each scanning N headers, which is quadratic.
+        var partitionKey = new PartitionKey(parent, node.RawKind);
+        if (!_partitions.TryGetValue(partitionKey, out var partition))
         {
-            cached = BuildGroup(node, namedIdentity);
-            _groups[key] = cached;
+            partition = BuildPartition(parent, node.RawKind);
+            _partitions[partitionKey] = partition;
         }
+
+        var group = namedIdentity is null
+            ? partition.Unnamed
+            : partition.ByHeader.TryGetValue(namedIdentity, out var named)
+                ? named
+                : partition.Unnamed;
 
         // The cached entry describes the whole group, not any particular member. Each node must
         // look up its own ordinal: returning the ordinal of whichever node happened to populate
         // the cache would give every sibling the same position, which is exactly the baseline
         // collision this identity scheme exists to prevent.
-        var ordinal = cached.Ordinals.TryGetValue(node, out var found) ? found : 1;
-        return new GroupInfo(ordinal, cached.Count, cached.Fingerprint);
+        var ordinal = group.Ordinals.TryGetValue(node, out var found) ? found : 1;
+        return new GroupInfo(ordinal, group.Count, group.Fingerprint);
     }
 
     /// <summary>
-    /// Enumerates a sibling group once and records each member's ordinal.
+    /// Partitions a parent's children of one kind by declaration header, in a single pass.
     /// </summary>
-    private static CachedGroup BuildGroup(SyntaxNode node, string? namedIdentity)
+    private static Partition BuildPartition(SyntaxNode parent, int rawKind)
     {
-        var parent = node.Parent!;
-        var siblings = new List<SyntaxNode>();
+        var byHeader = new Dictionary<string, List<SyntaxNode>>(StringComparer.Ordinal);
+        var unnamed = new List<SyntaxNode>();
+
         foreach (var sibling in parent.ChildNodes())
         {
-            if (sibling.RawKind != node.RawKind)
+            if (sibling.RawKind != rawKind)
                 continue;
 
-            if (namedIdentity is not null && StructuralPath.DescribeNodeForCache(sibling) != namedIdentity)
-                continue;
+            unnamed.Add(sibling);
 
-            siblings.Add(sibling);
+            var header = StructuralPath.DescribeNodeForCache(sibling);
+            if (!byHeader.TryGetValue(header, out var list))
+            {
+                list = new List<SyntaxNode>();
+                byHeader[header] = list;
+            }
+
+            list.Add(sibling);
         }
 
-        if (siblings.Count == 0)
-            siblings.Add(node);
+        var namedGroups = new Dictionary<string, CachedGroup>(StringComparer.Ordinal);
+        foreach (var (header, members) in byHeader)
+            namedGroups[header] = BuildGroup(members);
+
+        return new Partition(BuildGroup(unnamed), namedGroups);
+    }
+
+    /// <summary>
+    /// Builds a group's shared data from an already-enumerated member list.
+    /// </summary>
+    private static CachedGroup BuildGroup(List<SyntaxNode> members)
+    {
+        if (members.Count == 0)
+            return new CachedGroup(0, null, EmptyOrdinals);
 
         // The fingerprint covers the whole group, so it is computed once here rather than once
         // per member. Single-member groups never need one.
         string? fingerprint = null;
-        if (siblings.Count > 1)
+        if (members.Count > 1)
         {
             var contents = new StringBuilder();
-            foreach (var sibling in siblings)
+            foreach (var member in members)
             {
-                var text = sibling.ToString();
+                var text = member.ToString();
                 contents.Append(text.Length).Append(':').Append(text);
             }
 
@@ -102,10 +131,39 @@ public sealed class StructuralPathCache
         }
 
         var ordinals = new Dictionary<SyntaxNode, int>(ReferenceEqualityComparer.Instance);
-        for (var i = 0; i < siblings.Count; i++)
-            ordinals[siblings[i]] = i + 1;
+        for (var i = 0; i < members.Count; i++)
+            ordinals[members[i]] = i + 1;
 
-        return new CachedGroup(siblings.Count, fingerprint, ordinals);
+        return new CachedGroup(members.Count, fingerprint, ordinals);
+    }
+
+    private static readonly Dictionary<SyntaxNode, int> EmptyOrdinals =
+        new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// One parent's children of a single kind, partitioned by declaration header.
+    /// </summary>
+    private sealed record Partition(CachedGroup Unnamed, Dictionary<string, CachedGroup> ByHeader);
+
+    /// <summary>
+    /// Identifies a partition: the parent and the child kind.
+    /// </summary>
+    private readonly record struct PartitionKey(SyntaxNode Parent, int RawKind);
+
+    /// <summary>
+    /// Compares partition keys by parent reference, so distinct parents never share a partition.
+    /// </summary>
+    private sealed class PartitionKeyComparer : IEqualityComparer<PartitionKey>
+    {
+        public static readonly PartitionKeyComparer Instance = new();
+
+        public bool Equals(PartitionKey x, PartitionKey y) =>
+            ReferenceEquals(x.Parent, y.Parent) && x.RawKind == y.RawKind;
+
+        public int GetHashCode(PartitionKey key) =>
+            HashCode.Combine(
+                System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(key.Parent),
+                key.RawKind);
     }
 
     /// <summary>
