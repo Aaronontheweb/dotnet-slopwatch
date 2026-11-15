@@ -43,6 +43,12 @@ namespace Slopwatch.Detection.Rules;
 /// dynamic-typed slot, so they have no runtime effect.
 /// </description></item>
 /// <item><description>
+/// A using directive's name is a namespace-or-type reference, not a slot: <c>using dynamic;</c>
+/// imports a namespace named <c>dynamic</c> and <c>using static dynamic;</c> imports a type of
+/// that name. An alias target is <em>not</em> excluded — <c>using D = dynamic;</c> aliases the
+/// builtin type and is still flagged.
+/// </description></item>
+/// <item><description>
 /// A user-defined type literally named <c>dynamic</c> is flagged. This is an accepted false
 /// positive: without a semantic model the rule cannot distinguish it, and banning the name is
 /// consistent with the rule's intent.
@@ -131,6 +137,9 @@ public sealed class DynamicKeywordRule : IDetectionRule
             ordinals[node] = seen;
         }
 
+        // Structural-path fragments are shared between occurrences; compute each one once.
+        var identity = new IdentityCache();
+
         foreach (var (node, scope) in occurrences)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -155,7 +164,7 @@ public sealed class DynamicKeywordRule : IDetectionRule
                 lineNumber,
                 location.StartLinePosition.Character + 1,
                 "Use of 'dynamic' bypasses compile-time type checking",
-                BuildSnippet(node, scopeText[scope], ordinals[node], scopeCounts[scope]),
+                BuildSnippet(node, scopeText[scope], ordinals[node], scopeCounts[scope], identity),
                 "Replace 'dynamic' with a concrete type, a generic type parameter, or an interface. If dynamic is genuinely required (COM interop, dynamic proxy boundary), use [SlopwatchSuppress(\"SW021\", \"reason with 20+ chars\", \"Interop\")]"
             );
         }
@@ -190,6 +199,22 @@ public sealed class DynamicKeywordRule : IDetectionRule
         // type called `dynamic`, not the builtin contextual keyword. The keyword can never be
         // qualified.
         if (identifier.Parent is QualifiedNameSyntax or AliasQualifiedNameSyntax)
+            return false;
+
+        // A using directive's name is a namespace-or-type *reference*, never a dynamic-typed
+        // slot. `using dynamic;` imports a namespace called `dynamic`; `using static dynamic;`
+        // imports a type of that name. Neither can bind to the builtin keyword — `using static
+        // dynamic;` on its own is CS0246 — so both are name references, not slots.
+        //
+        // The one exception is an alias target: `using D = dynamic;` aliases the builtin type
+        // and is a genuine dynamic slot, so the exclusion applies only when the directive has
+        // no alias.
+        //
+        // This is a direct-parent test, not a walk up the ancestor chain. A chain walk would
+        // also swallow `using D = List<dynamic>;`, whose type argument is a real dynamic slot.
+        // It stays a single stable grammar node rather than the first arm of a growing switch:
+        // the total `SyntaxFacts` fallback below still answers every other case.
+        if (identifier.Parent is UsingDirectiveSyntax { Alias: null })
             return false;
 
         return SyntaxFacts.IsInNamespaceOrTypeContext(identifier);
@@ -253,12 +278,55 @@ public sealed class DynamicKeywordRule : IDetectionRule
     /// <summary>
     /// Combines an occurrence's structural identity with its enclosing source snippet.
     /// </summary>
-    private static string BuildSnippet(SyntaxNode node, string scopeText, int occurrence, int total)
+    private static string BuildSnippet(
+        SyntaxNode node, string scopeText, int occurrence, int total, IdentityCache identity)
+        => identity.BuildSnippet(node, scopeText, occurrence, total);
+
+    /// <summary>
+    /// Caches structural-path fragments for the duration of a single analysis.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every occurrence needs a total path from the compilation unit down to itself, and those
+    /// paths share almost all of their text. Building each path independently is quadratic: the
+    /// shared prefix is re-rendered once per occurrence, and — worse — the sibling fingerprint
+    /// for a group of N siblings is recomputed by each of the N members, hashing the
+    /// concatenation of all N sibling texts N times.
+    /// </para>
+    /// <para>
+    /// Both costs are pure functions of the syntax tree, so they are memoized here. The
+    /// fingerprint for a sibling group is identical for every member of that group, so it is
+    /// computed once per group. Path prefixes are memoized per node, so an ancestor shared by
+    /// many occurrences is rendered once. The emitted strings are byte-for-byte identical to the
+    /// uncached implementation; only the number of times they are computed changes.
+    /// </para>
+    /// <para>
+    /// Keys are <see cref="SyntaxNode"/> references. Roslyn's nodes use reference equality
+    /// (they do not implement <see cref="IEquatable{T}"/>), so structurally identical but
+    /// distinct nodes never share a cache entry — matching the uncached ordinal lookup, which
+    /// used <see cref="List{T}.IndexOf"/> and therefore also compared by reference.
+    /// </para>
+    /// </remarks>
+    private sealed class IdentityCache
     {
-        var qualified = $"{BuildStructuralPath(node)}: {scopeText}";
-        return total <= 1
-            ? qualified
-            : $"{qualified}\n// dynamic occurrence {occurrence} of {total}";
+        // The shared helper owns the caching. This wrapper exists so the rule keeps its own
+        // BuildSnippet shape while the path and fingerprint logic lives in one place, shared with
+        // the other rules that need structural identities.
+        private readonly StructuralPathCache _cache = new();
+
+        /// <summary>
+        /// Builds the reported snippet for one occurrence.
+        /// </summary>
+        public string BuildSnippet(SyntaxNode node, string scopeText, int occurrence, int total)
+        {
+            var path = BuildStructuralPath(node, _cache);
+            // string.Concat sizes the result once, so the full snippet is allocated exactly
+            // once instead of once per interpolation step.
+            return total <= 1
+                ? string.Concat(path, ": ", scopeText)
+                : string.Concat(path, ": ", scopeText,
+                    $"\n// dynamic occurrence {occurrence} of {total}");
+        }
     }
 
     /// <summary>
@@ -269,8 +337,8 @@ public sealed class DynamicKeywordRule : IDetectionRule
     /// from this rule. The path format is unchanged, so existing SW021 baselines and the
     /// identity test suite continue to match.
     /// </remarks>
-    private static string BuildStructuralPath(SyntaxNode node) => StructuralPath.ForNode(node);
-
+    private static string BuildStructuralPath(SyntaxNode node, StructuralPathCache cache)
+        => StructuralPath.ForNode(node, cache);
 
     /// <summary>
     /// Finds the nearest enclosing declaration that can carry a suppression attribute.

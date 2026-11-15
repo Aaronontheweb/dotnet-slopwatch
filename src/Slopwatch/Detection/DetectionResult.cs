@@ -56,6 +56,7 @@ public sealed record DetectionResult(
     /// which breaks binary compatibility for any consumer compiled against the previous shape.
     /// </remarks>
     public string? Identity { get; init; }
+
     /// <summary>
     /// The string used as input to the baseline hash.
     /// </summary>
@@ -66,6 +67,16 @@ public sealed record DetectionResult(
     /// identity set it here and keep <see cref="CodeSnippet"/> for humans.
     /// </remarks>
     public string BaselineIdentity => Identity ?? CodeSnippet ?? string.Empty;
+
+    /// <summary>
+    /// Indicates whether the finding came from a file that declares itself generated.
+    /// </summary>
+    /// <remarks>
+    /// Only set when <see cref="Analysis.GeneratedCodeMode.AnalyzeAndReport"/> is active.
+    /// Declared as a body property rather than a positional parameter so the primary
+    /// constructor signature stays compatible with existing consumers.
+    /// </remarks>
+    public bool IsGeneratedCode { get; init; }
 
     /// <summary>
     /// Returns a formatted string representation suitable for console output.

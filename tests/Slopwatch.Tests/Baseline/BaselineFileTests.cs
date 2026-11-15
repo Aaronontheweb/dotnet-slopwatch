@@ -383,6 +383,87 @@ public class BaselineFileTests
         }
     }
 
+    [Fact]
+    public void SyncWithDetections_PreservesEntriesForSkippedFiles()
+    {
+        // A generated file that is skipped rather than analyzed must keep its baseline entries,
+        // otherwise flipping generatedCode.mode back to "analyze" resurfaces a wall of findings.
+        var baseline = new BaselineFile();
+        var generatedFile = CreateResult("SW001", "/root/src/Model.g.cs", 10, "generated-snippet");
+        var handWrittenFile = CreateResult("SW001", "/root/src/A.cs", 20, "old-a");
+        baseline.AddEntry(generatedFile, "/root");
+        baseline.AddEntry(handWrittenFile, "/root");
+
+        var currentResults = Array.Empty<DetectionResult>();
+
+        var (removed, added, kept) = baseline.SyncWithDetections(
+            currentResults,
+            "/root",
+            new[] { "/root/src/Model.g.cs", "/root/src/A.cs" },
+            new[] { "/root/src/Model.g.cs" });
+
+        Assert.Equal(1, removed);
+        Assert.Equal(0, added);
+        Assert.Equal(1, kept);
+        Assert.Single(baseline.Entries);
+        Assert.Contains(baseline.Entries, e => e.FilePath == "src/Model.g.cs");
+    }
+
+    [Fact]
+    public void SyncWithDetections_WithoutSkippedFilesRemovesGeneratedEntries()
+    {
+        // Control case: without the skipped-file set, the same scan prunes the entry.
+        var baseline = new BaselineFile();
+        baseline.AddEntry(CreateResult("SW001", "/root/src/Model.g.cs", 10, "generated-snippet"), "/root");
+
+        var (removed, added, kept) = baseline.SyncWithDetections(
+            Array.Empty<DetectionResult>(),
+            "/root",
+            new[] { "/root/src/Model.g.cs" });
+
+        Assert.Equal(1, removed);
+        Assert.Equal(0, added);
+        Assert.Equal(0, kept);
+        Assert.Empty(baseline.Entries);
+    }
+
+    [Fact]
+    public void SyncWithDetections_PrunesPartiallyAnalyzedFilesNormally()
+    {
+        // A file that was analyzed but had individual findings filtered out as generated is
+        // pruned normally. Preserving per-finding entries is unsound: the hash cannot distinguish
+        // identical snippets, and line numbers are neither stable nor unique. Pruning a live
+        // generated entry is noise; shielding a stale hand-written entry is a false negative.
+        var baseline = new BaselineFile();
+        var generatedFinding = CreateResult("SW003", "/root/src/Mixed.cs", 10, "catch { }");
+        var fixedHandWrittenFinding = CreateResult("SW003", "/root/src/Mixed.cs", 40, "catch { throw; }");
+        baseline.AddEntry(generatedFinding, "/root");
+        baseline.AddEntry(fixedHandWrittenFinding, "/root");
+
+        var (removed, added, kept) = baseline.SyncWithDetections(
+            Array.Empty<DetectionResult>(),
+            "/root",
+            new[] { "/root/src/Mixed.cs" });
+
+        Assert.Equal(2, removed);
+        Assert.Equal(0, added);
+        Assert.Equal(0, kept);
+        Assert.Empty(baseline.Entries);
+    }
+
+    [Fact]
+    public void SyncWithDetections_ThreeParameterOverloadRemainsCallable()
+    {
+        // Source compatibility: the two-argument and three-argument forms must still compile.
+        var baseline = new BaselineFile();
+
+        var twoArg = baseline.SyncWithDetections(Array.Empty<DetectionResult>(), "/root");
+        var threeArg = baseline.SyncWithDetections(Array.Empty<DetectionResult>(), "/root", null);
+
+        Assert.Equal(0, twoArg.removed);
+        Assert.Equal(0, threeArg.removed);
+    }
+
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
     {
         foreach (var item in source)

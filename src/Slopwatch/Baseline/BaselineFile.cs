@@ -272,10 +272,44 @@ public sealed class BaselineFile
     /// <param name="scannedFiles">Optional list of files included in the current scan;
     /// only entries for these files are considered for stale removal.</param>
     /// <returns>Tuple of (removed, added, kept) counts</returns>
+    /// <remarks>
+    /// Retained as a distinct overload so previously compiled consumers that bind the
+    /// three-parameter signature keep working.
+    /// </remarks>
     public (int removed, int added, int kept) SyncWithDetections(
         IEnumerable<DetectionResult> results,
         string rootDirectory,
         IEnumerable<string>? scannedFiles = null)
+    {
+        return SyncWithDetections(results, rootDirectory, scannedFiles, skippedFiles: null);
+    }
+
+    /// <summary>
+    /// Synchronizes the baseline with current detection results - removes stale entries
+    /// that no longer exist in the provided scan scope and adds any new detections.
+    /// </summary>
+    /// <param name="results">The current detection results</param>
+    /// <param name="rootDirectory">Root directory for computing relative paths</param>
+    /// <param name="scannedFiles">Optional list of files included in the current scan;
+    /// only entries for these files are considered for stale removal.</param>
+    /// <param name="skippedFiles">Optional list of files that were present in the scan but
+    /// deliberately not analyzed (for example, generated code). Entries for these files are
+    /// never removed, so changing the analysis configuration later does not resurface findings.</param>
+    /// <returns>Tuple of (removed, added, kept) counts</returns>
+    /// <remarks>
+    /// Preservation is scoped to whole files. A file that was only partially analyzed — some
+    /// findings filtered out as generated, others reported — is pruned normally. The baseline
+    /// hash is rule + path + snippet, which cannot distinguish two identical snippets in the
+    /// same file, and line numbers are neither stable under edits nor unique within a line.
+    /// Preserving individual findings would therefore risk shielding a stale hand-written entry,
+    /// which is a false negative. Pruning a live generated entry is only noise, so the
+    /// conservative direction is to prune.
+    /// </remarks>
+    public (int removed, int added, int kept) SyncWithDetections(
+        IEnumerable<DetectionResult> results,
+        string rootDirectory,
+        IEnumerable<string>? scannedFiles,
+        IEnumerable<string>? skippedFiles)
     {
         // Build a set of all current hashes from the detection results
         var currentHashes = new HashSet<string>();
@@ -300,6 +334,20 @@ public sealed class BaselineFile
             }
         }
 
+        HashSet<string>? skippedFilePaths = null;
+        if (skippedFiles is not null)
+        {
+            var normalizedSkippedPaths = skippedFiles
+                .Select(path => GetRelativePath(path, rootDirectory))
+                .Select(path => path.Replace('\\', '/'))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (normalizedSkippedPaths.Count > 0)
+            {
+                skippedFilePaths = normalizedSkippedPaths;
+            }
+        }
+
         var removed = 0;
         var kept = 0;
 
@@ -308,6 +356,14 @@ public sealed class BaselineFile
         {
             if (scopedFilePaths is not null && !scopedFilePaths.Contains(e.FilePath))
             {
+                return false;
+            }
+
+            // Files that were skipped rather than analyzed keep their entries: the absence of
+            // findings reflects the configuration, not a fix.
+            if (skippedFilePaths is not null && skippedFilePaths.Contains(e.FilePath))
+            {
+                kept++;
                 return false;
             }
 

@@ -39,6 +39,34 @@ public sealed class StructuralPathCache
     private readonly Dictionary<XElement, Dictionary<XName, XmlGroup>> _xmlPartitions =
         new(ReferenceEqualityComparer.Instance);
 
+    // Segments are cached per node, never complete prefixes. Caching a complete prefix per
+    // ancestor would retain O(depth^2) characters for a single occurrence, because each ancestor's
+    // cached string contains every ancestor above it. Segments are O(1) each, so the cache stays
+    // linear in tree size and the join happens once per occurrence.
+    private readonly Dictionary<SyntaxNode, string> _segments =
+        new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// Returns the cached length-prefixed path segment for a node, computing it on first use.
+    /// </summary>
+    /// <param name="node">The node whose segment is needed.</param>
+    /// <param name="render">Renders the segment when it is not already cached.</param>
+    /// <remarks>
+    /// Every occurrence needs a total path from the compilation unit down to itself, and those
+    /// paths share almost all of their text. Rendering each segment independently is quadratic in
+    /// depth: the shared prefix is re-rendered once per occurrence. Memoizing per node makes the
+    /// total work linear in the number of distinct nodes touched.
+    /// </remarks>
+    internal string GetSegment(SyntaxNode node, Func<SyntaxNode, string> render)
+    {
+        if (_segments.TryGetValue(node, out var cached))
+            return cached;
+
+        var rendered = render(node);
+        _segments[node] = rendered;
+        return rendered;
+    }
+
     /// <summary>
     /// Returns the cached group information for a node's sibling group, computing it on first use.
     /// </summary>
@@ -122,17 +150,7 @@ public sealed class StructuralPathCache
         // per member. Single-member groups never need one.
         string? fingerprint = null;
         if (members.Count > 1)
-        {
-            var contents = new StringBuilder();
-            foreach (var member in members)
-            {
-                var text = member.ToString();
-                contents.Append(text.Length).Append(':').Append(text);
-            }
-
-            fingerprint = Convert.ToHexString(
-                SHA256.HashData(Encoding.UTF8.GetBytes(contents.ToString())));
-        }
+            fingerprint = StructuralPath.FingerprintNodes(members);
 
         var ordinals = new Dictionary<SyntaxNode, int>(ReferenceEqualityComparer.Instance);
         for (var i = 0; i < members.Count; i++)
@@ -208,7 +226,7 @@ public sealed class StructuralPathCache
 
         var fingerprint = members.Length == 1
             ? null
-            : StructuralPath.FingerprintForCache(members.Select(m => m.ToString()));
+            : StructuralPath.FingerprintNodes(members);
 
         var ordinals = new Dictionary<StructuredTriviaSyntax, int>(ReferenceEqualityComparer.Instance);
         for (var i = 0; i < members.Length; i++)
