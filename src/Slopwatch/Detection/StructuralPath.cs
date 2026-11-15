@@ -95,8 +95,16 @@ public static class StructuralPath
         var named = IsNamedDeclaration(node);
         var description = DescribeNode(node);
         var segment = description + SiblingIdentity(node, named ? description : null, cache);
+
+        // Line endings are normalized BEFORE the length prefix is computed. A declaration header
+        // can contain a multiline literal (an attribute argument, for example), so the raw segment
+        // text differs between an LF and a CRLF checkout. Normalizing only the final identity
+        // string would leave the numeric prefix describing the unnormalized length, so the same
+        // source would produce a different path per platform.
+        var normalized = segment.Replace("\r\n", "\n").Replace("\r", "\n");
+
         // Length prefixes make paths unambiguous even if source text contains '/' or ':'.
-        return $"{segment.Length}:{segment}";
+        return $"{normalized.Length}:{normalized}";
     }
 
     /// <summary>

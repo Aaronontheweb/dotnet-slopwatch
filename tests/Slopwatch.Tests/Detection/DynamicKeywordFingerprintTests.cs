@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Slopwatch.Detection;
 using Slopwatch.Detection.Rules;
 using Xunit;
@@ -141,7 +142,11 @@ public class DynamicKeywordFingerprintTests
         // statements contains no line breaks inside its spans, so it fingerprints identically
         // whether or not normalization happens. Two multiline methods are the shape that exposes
         // the difference.
-        const string lf = """
+        //
+        // The literal is normalized to LF first. A raw string literal inherits the line endings of
+        // the source file, so on a Windows checkout it already contains CRLF and a bare
+        // Replace("\n", "\r\n") would produce CRCRLF.
+        const string raw = """
             class C
             {
                 void A()
@@ -155,7 +160,11 @@ public class DynamicKeywordFingerprintTests
                 }
             }
             """;
+        var lf = raw.Replace("\r\n", "\n");
         var crlf = lf.Replace("\n", "\r\n");
+
+        Assert.DoesNotContain('\r', lf);
+        Assert.Contains("\r\n", crlf);
 
         var lfSiblings = MultiSiblingGroups(lf);
         var crlfSiblings = MultiSiblingGroups(crlf);
@@ -200,6 +209,57 @@ public class DynamicKeywordFingerprintTests
         }
 
         return groups;
+    }
+
+    [Fact]
+    public void StructuralPathIsIdenticalForLfAndCrlfSources()
+    {
+        // A declaration header can contain a multiline literal (an attribute argument, for
+        // example), so the raw segment text differs between an LF and a CRLF checkout. The length
+        // prefix must describe the NORMALIZED text: normalizing only the final identity string
+        // would leave a numeric prefix that still differs per platform, and the same source would
+        // produce a different baseline identity.
+        const string raw = """
+            class C
+            {
+                [System.Obsolete(@"line1
+            line2")]
+                void M()
+                {
+                    dynamic a = 1;
+                }
+            }
+            """;
+        var lf = raw.Replace("\r\n", "\n");
+        var crlf = lf.Replace("\n", "\r\n");
+
+        Assert.DoesNotContain('\r', lf);
+
+        var lfPaths = DynamicPaths(lf);
+        var crlfPaths = DynamicPaths(crlf);
+
+        Assert.NotEmpty(lfPaths);
+        Assert.Equal(lfPaths.Count, crlfPaths.Count);
+
+        // Guard the premise: at least one path must contain a segment whose text spans lines,
+        // otherwise the length prefix was never exercised.
+        Assert.Contains(lfPaths, path => path.Contains('\n'));
+
+        for (var i = 0; i < lfPaths.Count; i++)
+            Assert.Equal(lfPaths[i], crlfPaths[i]);
+    }
+
+    /// <summary>
+    /// Collects the structural path of every <c>dynamic</c> occurrence in a source text.
+    /// </summary>
+    private static List<string> DynamicPaths(string code)
+    {
+        var root = CSharpSyntaxTree.ParseText(code).GetRoot();
+        return root.DescendantNodes()
+            .OfType<IdentifierNameSyntax>()
+            .Where(identifier => identifier.Identifier.ValueText == "dynamic")
+            .Select(identifier => StructuralPath.ForNode(identifier))
+            .ToList();
     }
 
     /// <summary>

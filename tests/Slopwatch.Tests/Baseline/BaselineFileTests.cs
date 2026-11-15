@@ -460,7 +460,9 @@ public class BaselineFileTests
     [Fact]
     public async Task LoadAsync_RemedyOmitsBaselineFlagForDefaultPath()
     {
-        // The default path keeps the short form, so the common case stays uncluttered.
+        // The default path keeps the short form, so the common case stays uncluttered. "Default"
+        // means the complete default path for the selected root, so the root has to be supplied
+        // for the comparison to be meaningful.
         var directory = Path.Combine(Path.GetTempPath(), $"slopwatch-default-{Guid.NewGuid():N}");
         var slopwatchDir = Path.Combine(directory, ".slopwatch");
         Directory.CreateDirectory(slopwatchDir);
@@ -475,10 +477,41 @@ public class BaselineFileTests
                 """);
 
             var ex = await Assert.ThrowsAsync<BaselineVersionException>(
-                () => BaselineFile.LoadAsync(path));
+                () => BaselineFile.LoadAsync(path, rootDirectory: directory));
 
             Assert.Contains("slopwatch init --force", ex.Message);
             Assert.DoesNotContain("--baseline", ex.Message);
+            Assert.Contains("--directory", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LoadAsync_RemedyTreatsNestedSlopwatchPathAsCustom()
+    {
+        // A custom path like other/.slopwatch/baseline.json ends in the same two components as the
+        // default but is a different file. Comparing only the final two components would print the
+        // short remedy, which rewrites the default baseline and leaves the custom file stale.
+        var directory = Path.Combine(Path.GetTempPath(), $"slopwatch-nested-{Guid.NewGuid():N}");
+        var nested = Path.Combine(directory, "other", ".slopwatch");
+        Directory.CreateDirectory(nested);
+        var path = Path.Combine(nested, "baseline.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, """
+                {
+                  "version": 1,
+                  "entries": []
+                }
+                """);
+
+            var ex = await Assert.ThrowsAsync<BaselineVersionException>(
+                () => BaselineFile.LoadAsync(path, rootDirectory: directory));
+
+            Assert.Contains("--baseline", ex.Message);
         }
         finally
         {
@@ -548,6 +581,83 @@ public class BaselineFileTests
         var baseline = new BaselineFile();
         foreach (var result in results)
             baseline.AddEntry(result, "/root");
+    }
+
+    [Fact]
+    public async Task InitCommand_WritesToCustomBaselinePath()
+    {
+        // The remedy printed by BaselineVersionException tells the user to run init with
+        // --baseline. If init ignored that option it would rewrite the default file, leave the
+        // custom one stale, and the user would hit the same error again. This exercises the
+        // command itself rather than the message, which is the gap a mutation of init exposed.
+        var directory = Path.Combine(Path.GetTempPath(), $"slopwatch-init-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var customPath = Path.Combine(directory, "state", "custom.json");
+        try
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(directory, "Test.cs"),
+                "class C { void M() { System.Threading.Tasks.Task.Delay(100).Wait(); } }");
+
+            var exitCode = await new Slopwatch.Cmd.Commands.InitCommand
+            {
+                Directory = directory,
+                Force = true,
+                BaselinePath = customPath
+            }.ExecuteAsync();
+
+            Assert.Equal(0, exitCode);
+            Assert.True(File.Exists(customPath), "init did not write the custom baseline path.");
+
+            // The default path must NOT be created, otherwise the user has two baselines and the
+            // one analyze reads is still stale.
+            Assert.False(
+                File.Exists(Path.Combine(directory, ".slopwatch", "baseline.json")),
+                "init wrote the default baseline path as well.");
+
+            var written = await BaselineFile.LoadAsync(customPath, rootDirectory: directory);
+            Assert.NotNull(written);
+            Assert.Equal(BaselineFile.CurrentVersion, written.Version);
+            Assert.NotEmpty(written.Entries);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LoadAsync_RemedyPrintsRootRelativeBaselinePath()
+    {
+        // init resolves --baseline relative to its --directory, exactly as analyze does. Printing
+        // the absolute path would be re-resolved against the root and doubled
+        // (project/project/state/custom.json), so the remedy must print the path relative to the
+        // root -- which is what the user originally passed to analyze.
+        var directory = Path.Combine(Path.GetTempPath(), $"slopwatch-rel-{Guid.NewGuid():N}");
+        var stateDir = Path.Combine(directory, "state");
+        Directory.CreateDirectory(stateDir);
+        var path = Path.Combine(stateDir, "custom.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, """
+                {
+                  "version": 1,
+                  "entries": []
+                }
+                """);
+
+            var ex = await Assert.ThrowsAsync<BaselineVersionException>(
+                () => BaselineFile.LoadAsync(path, rootDirectory: directory));
+
+            Assert.Contains("--baseline \"state/custom.json\"", ex.Message);
+            // The header and --directory legitimately show the absolute root; only the --baseline
+            // value must be root-relative, so assert on that argument specifically.
+            Assert.DoesNotContain($"--baseline \"{directory}", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]

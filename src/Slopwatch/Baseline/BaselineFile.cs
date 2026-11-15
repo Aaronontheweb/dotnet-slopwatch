@@ -197,12 +197,19 @@ public sealed class BaselineFile
     /// </summary>
     /// <param name="path">Path to the baseline file</param>
     /// <param name="cancellationToken">Cancellation token</param>
+    /// <param name="rootDirectory">
+    /// The analysis root the baseline was resolved against, when known. Used only to build an
+    /// accurate remedy message when the file is out of date.
+    /// </param>
     /// <returns>The loaded baseline file, or null if not found</returns>
     /// <exception cref="BaselineVersionException">
     /// The file was written by an older schema version whose entry hashes cannot be matched by
     /// the current identity scheme.
     /// </exception>
-    public static async Task<BaselineFile?> LoadAsync(string path, CancellationToken cancellationToken = default)
+    public static async Task<BaselineFile?> LoadAsync(
+        string path,
+        CancellationToken cancellationToken = default,
+        string? rootDirectory = null)
     {
         if (!File.Exists(path))
             return null;
@@ -237,10 +244,10 @@ public sealed class BaselineFile
         // silently fail to match and the user would see their entire baseline reappear as new
         // findings with no explanation. Refuse to load instead of producing that wall of noise.
         if (declaredVersion is null)
-            throw new BaselineVersionException(path, 1, CurrentVersion);
+            throw new BaselineVersionException(path, 1, CurrentVersion, rootDirectory);
 
         if (declaredVersion < CurrentVersion)
-            throw new BaselineVersionException(path, declaredVersion.Value, CurrentVersion);
+            throw new BaselineVersionException(path, declaredVersion.Value, CurrentVersion, rootDirectory);
 
         return document.Deserialize<BaselineFile>(JsonOptions);
     }

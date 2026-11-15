@@ -168,7 +168,10 @@ public sealed class AnalyzeCommand
             {
                 try
                 {
-                    baseline = await Baseline.BaselineFile.LoadAsync(resolvedBaselinePath, cancellationToken);
+                    baseline = await Baseline.BaselineFile.LoadAsync(
+                        resolvedBaselinePath,
+                        cancellationToken,
+                        rootDirectory);
                 }
                 catch (Baseline.BaselineVersionException ex)
                 {

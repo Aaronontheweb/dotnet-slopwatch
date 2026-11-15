@@ -18,8 +18,17 @@ public sealed class BaselineVersionException : Exception
     /// <param name="path">Path to the baseline file that could not be used.</param>
     /// <param name="foundVersion">The schema version recorded in the file.</param>
     /// <param name="requiredVersion">The schema version this build requires.</param>
-    public BaselineVersionException(string path, int foundVersion, int requiredVersion)
-        : base(BuildMessage(path, foundVersion, requiredVersion))
+    /// <param name="rootDirectory">
+    /// The analysis root the baseline was resolved against, when known. The remedy has to preserve
+    /// it: running init from a different directory scans the wrong tree and records paths relative
+    /// to the wrong root, so the regenerated baseline would not match the next analysis.
+    /// </param>
+    public BaselineVersionException(
+        string path,
+        int foundVersion,
+        int requiredVersion,
+        string? rootDirectory = null)
+        : base(BuildMessage(path, foundVersion, requiredVersion, rootDirectory))
     {
         Path = path;
         FoundVersion = foundVersion;
@@ -41,24 +50,48 @@ public sealed class BaselineVersionException : Exception
     /// </summary>
     public int RequiredVersion { get; }
 
-    private static string BuildMessage(string path, int foundVersion, int requiredVersion)
+    private static string BuildMessage(
+        string path,
+        int foundVersion,
+        int requiredVersion,
+        string? rootDirectory)
     {
-        // The remedy has to name the file that actually failed. init writes
-        // .slopwatch/baseline.json by default, so a project using a custom --baseline path would
-        // follow the default instruction, regenerate the wrong file, and hit this same error
-        // again. Name the path explicitly whenever it is not the default.
-        var isDefaultPath = string.Equals(
-            System.IO.Path.GetFileName(path),
-            "baseline.json",
-            StringComparison.OrdinalIgnoreCase)
+        // The remedy has to name the file that actually failed AND the root it was resolved
+        // against. init writes .slopwatch/baseline.json under its -d directory by default, so a
+        // project using a custom --baseline path would follow the default instruction, regenerate
+        // the wrong file, and hit this same error again. Running init from a different directory
+        // is worse: it succeeds but records paths relative to the wrong root, so the regenerated
+        // baseline silently fails to match the next analysis.
+        //
+        // "Default" means the complete default path for the selected root, not just the final two
+        // components. A custom path like other/.slopwatch/baseline.json ends in the same two
+        // names but is a different file.
+        var defaultPath = rootDirectory is null
+            ? null
+            : System.IO.Path.GetFullPath(
+                System.IO.Path.Combine(rootDirectory, ".slopwatch", "baseline.json"));
+
+        var isDefaultPath = defaultPath is not null
             && string.Equals(
-                System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(path) ?? string.Empty),
-                ".slopwatch",
+                System.IO.Path.GetFullPath(path),
+                defaultPath,
                 StringComparison.OrdinalIgnoreCase);
 
+        var directoryArgument = rootDirectory is null
+            ? string.Empty
+            : $" --directory \"{rootDirectory}\"";
+
+        // init resolves --baseline relative to its --directory, exactly as analyze does. Printing
+        // the absolute path would therefore be re-resolved against the root and doubled
+        // (project/project/state/custom.json). Print the path relative to the root instead, which
+        // is what the user originally passed to analyze.
+        var baselineArgument = rootDirectory is null
+            ? path
+            : System.IO.Path.GetRelativePath(rootDirectory, path);
+
         var remedy = isDefaultPath
-            ? "    slopwatch init --force"
-            : $"    slopwatch init --force --baseline \"{path}\"";
+            ? $"    slopwatch init --force{directoryArgument}"
+            : $"    slopwatch init --force{directoryArgument} --baseline \"{baselineArgument}\"";
 
         return $"""
         Baseline file is out of date: {path}
