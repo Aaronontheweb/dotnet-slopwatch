@@ -729,6 +729,75 @@ public class BaselineFileTests
     }
 
     [Fact]
+    public void LoadAsync_PreservesOriginalTwoParameterClrSignature()
+    {
+        // Adding optional parameters to LoadAsync replaced the public two-parameter CLR signature,
+        // so a consumer compiled against the previous version would throw MissingMethodException
+        // at run time. Source compatibility is not enough: the exact signature must still exist.
+        var method = typeof(BaselineFile).GetMethod(
+            "LoadAsync",
+            new[] { typeof(string), typeof(CancellationToken) });
+
+        Assert.NotNull(method);
+        Assert.Equal(typeof(Task<BaselineFile?>), method.ReturnType);
+    }
+
+    [Fact]
+    public async Task AnalyzeCommand_ForwardsConfigPathToBaselineLoad()
+    {
+        // The remedy must carry the config the analysis actually used. A config that enables
+        // generated-code analysis changes which findings exist, so regenerating without it records
+        // a different baseline than the next analysis expects. This exercises the CLI forwarding
+        // rather than the message construction: removing the forwarding in AnalyzeCommand would
+        // otherwise leave every test green.
+        var directory = Path.Combine(Path.GetTempPath(), $"slopwatch-fwd-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var baselinePath = Path.Combine(directory, "state", "custom.json");
+        var configPath = Path.Combine(directory, "myconfig.json");
+        var originalError = Console.Error;
+        var captured = new StringWriter();
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(baselinePath)!);
+            await File.WriteAllTextAsync(
+                Path.Combine(directory, "Test.cs"),
+                "class C { void M() { System.Threading.Tasks.Task.Delay(100).Wait(); } }");
+            await File.WriteAllTextAsync(baselinePath, """
+                {
+                  "version": 1,
+                  "entries": []
+                }
+                """);
+            await File.WriteAllTextAsync(configPath, """
+                {
+                  "generatedCode": { "mode": "analyze" }
+                }
+                """);
+
+            Console.SetError(captured);
+            var exitCode = await new Slopwatch.Cmd.Commands.AnalyzeCommand
+            {
+                Directory = directory,
+                BaselineFile = "state/custom.json",
+                ConfigFile = "myconfig.json"
+            }.ExecuteAsync();
+
+            Assert.Equal(2, exitCode);
+
+            // The remedy must name the config. Without the forwarding, the message omits it and
+            // the user regenerates a baseline that disagrees with the next analysis.
+            var message = captured.ToString();
+            Assert.Contains("--config", message);
+            Assert.Contains("myconfig.json", message);
+        }
+        finally
+        {
+            Console.SetError(originalError);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task LoadAsync_AcceptsCurrentSchemaVersion()
     {
         var path = Path.Combine(Path.GetTempPath(), $"slopwatch-v2-{Guid.NewGuid():N}.json");
