@@ -36,8 +36,8 @@ public sealed class StructuralPathCache
     private readonly Dictionary<DirectiveKey, StructuralPath.DirectiveGroup> _directives =
         new(DirectiveKeyComparer.Instance);
 
-    private readonly Dictionary<XmlKey, XmlGroup> _xmlGroups =
-        new(XmlKeyComparer.Instance);
+    private readonly Dictionary<XElement, Dictionary<XName, XmlGroup>> _xmlPartitions =
+        new(ReferenceEqualityComparer.Instance);
 
     /// <summary>
     /// Returns the cached group information for a node's sibling group, computing it on first use.
@@ -257,31 +257,57 @@ public sealed class StructuralPathCache
         if (parent is null)
             return new XmlGroup(1, 1, null);
 
-        var key = new XmlKey(parent, element.Name);
-        if (_xmlGroups.TryGetValue(key, out var cached))
+        // Partition the parent's children by qualified name ONCE. Calling
+        // parent.Elements(element.Name) per distinct name rescans every child each time, so N
+        // distinct names under one parent cost N^2 name comparisons: 1.58 seconds of identity
+        // construction at 16,000 mixed-namespace elements.
+        if (!_xmlPartitions.TryGetValue(parent, out var partition))
         {
-            var ordinal = cached.Ordinals is not null && cached.Ordinals.TryGetValue(element, out var found)
-                ? found
-                : 1;
-            return new XmlGroup(ordinal, cached.Count, cached.Fingerprint);
+            partition = BuildXmlPartition(parent);
+            _xmlPartitions[parent] = partition;
         }
 
-        var siblings = parent.Elements(element.Name).ToList();
-        if (siblings.Count == 0)
-            siblings.Add(element);
+        if (!partition.TryGetValue(element.Name, out var group))
+            return new XmlGroup(1, 1, null);
 
-        var fingerprint = siblings.Count == 1
-            ? null
-            : StructuralPath.FingerprintForCache(siblings.Select(s => s.ToString()));
+        var ordinal = group.Ordinals is not null && group.Ordinals.TryGetValue(element, out var found)
+            ? found
+            : 1;
+        return new XmlGroup(ordinal, group.Count, group.Fingerprint);
+    }
 
-        var ordinals = new Dictionary<XElement, int>(ReferenceEqualityComparer.Instance);
-        for (var i = 0; i < siblings.Count; i++)
-            ordinals[siblings[i]] = i + 1;
+    /// <summary>
+    /// Partitions one parent's children by qualified name in a single pass.
+    /// </summary>
+    private static Dictionary<XName, XmlGroup> BuildXmlPartition(XElement parent)
+    {
+        var byName = new Dictionary<XName, List<XElement>>();
+        foreach (var child in parent.Elements())
+        {
+            if (!byName.TryGetValue(child.Name, out var list))
+            {
+                list = new List<XElement>();
+                byName[child.Name] = list;
+            }
 
-        _xmlGroups[key] = new XmlGroup(0, siblings.Count, fingerprint, ordinals);
+            list.Add(child);
+        }
 
-        var own = ordinals.TryGetValue(element, out var position) ? position : 1;
-        return new XmlGroup(own, siblings.Count, fingerprint);
+        var result = new Dictionary<XName, XmlGroup>();
+        foreach (var (name, members) in byName)
+        {
+            var fingerprint = members.Count == 1
+                ? null
+                : StructuralPath.FingerprintForCache(members.Select(m => m.ToString()));
+
+            var ordinals = new Dictionary<XElement, int>(ReferenceEqualityComparer.Instance);
+            for (var i = 0; i < members.Count; i++)
+                ordinals[members[i]] = i + 1;
+
+            result[name] = new XmlGroup(0, members.Count, fingerprint, ordinals);
+        }
+
+        return result;
     }
 
     /// <summary>

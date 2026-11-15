@@ -260,6 +260,28 @@ class C
             + "XML sibling groups are likely being re-fingerprinted per finding.");
     }
 
+    [Fact]
+    public void XmlDistinctNamespacesAllocateLinearly()
+    {
+        // N distinct qualified names under one parent. Calling parent.Elements(name) per name
+        // rescans every child each time, so N distinct names cost N^2 name comparisons.
+        var small = MeasureXmlAllocation(BuildMixedNamespaceXml(500));
+        var large = MeasureXmlAllocation(BuildMixedNamespaceXml(2000));
+
+        Assert.True(
+            large < small * 6.0,
+            $"Allocation grew from {small:N0} bytes at 500 names to {large:N0} bytes at 2000 "
+            + $"(ratio {large / (double)small:F2}, expected < 6.0 for a 4x input increase). "
+            + "XML children are likely being rescanned per qualified name.");
+    }
+
+    private static string BuildMixedNamespaceXml(int count)
+    {
+        var elements = string.Concat(Enumerable.Range(0, count)
+            .Select(i => $"<NoWarn xmlns='urn:n{i}'>CS1591</NoWarn>"));
+        return "<Project><PropertyGroup>" + elements + "</PropertyGroup></Project>";
+    }
+
     private static long MeasureXmlAllocation(string xml)
     {
         RunXmlRule(xml);
@@ -322,11 +344,30 @@ class C
     private static TimeSpan MeasureRuleTime(string code, IDetectionRule rule)
     {
         var tree = CSharpSyntaxTree.ParseText(code);
-        RunRule(tree, code, rule);
-        RunRule(tree, code, rule);
+
+        // Warm up thoroughly. A fixed two-run warm-up left the JIT and Roslyn's lazy structures
+        // partially cold, so the first measured size absorbed costs the second did not — which
+        // made the ratio depend on execution order and let a quadratic mutant pass in fresh
+        // processes. Warm until two consecutive runs agree within 10%, then measure.
+        var previous = TimeSpan.MaxValue;
+        for (var i = 0; i < 12; i++)
+        {
+            var start = System.Diagnostics.Stopwatch.GetTimestamp();
+            RunRule(tree, code, rule);
+            var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(start);
+
+            if (previous != TimeSpan.MaxValue
+                && Math.Abs(elapsed.TotalMilliseconds - previous.TotalMilliseconds)
+                   <= previous.TotalMilliseconds * 0.10)
+            {
+                break;
+            }
+
+            previous = elapsed;
+        }
 
         var best = TimeSpan.MaxValue;
-        for (var i = 0; i < 3; i++)
+        for (var i = 0; i < 5; i++)
         {
             var start = System.Diagnostics.Stopwatch.GetTimestamp();
             RunRule(tree, code, rule);
