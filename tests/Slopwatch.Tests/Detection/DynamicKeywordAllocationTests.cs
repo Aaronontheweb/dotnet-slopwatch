@@ -78,9 +78,9 @@ public class DynamicKeywordAllocationTests
         var allocated = MeasureRuleAllocation(code);
 
         Assert.True(
-            allocated < payloadBytes * 3.0,
+            allocated < payloadBytes * 2L,
             $"Rule allocated {allocated:N0} bytes for {count} occurrences in one signature, more "
-            + $"than 3x the {payloadBytes:N0} bytes of snippet text it emitted. Path or sibling "
+            + $"than 2x the {payloadBytes:N0} bytes of snippet text it emitted. Path or sibling "
             + "caching has likely regressed.");
     }
 
