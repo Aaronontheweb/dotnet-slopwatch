@@ -60,10 +60,15 @@ public class DynamicKeywordFingerprintTests
     public void FingerprintHandlesSurrogatePairsAcrossChunkBoundaries()
     {
         // A string of astral-plane characters is 2 UTF-16 chars each. With a 4096-char chunk,
-        // a naive split lands mid-surrogate and corrupts the encoding. Build a group whose
-        // sibling text straddles that boundary.
-        var filler = new string('a', 4095);
-        var code = "class C{void M(){dynamic a=\"" + filler + "😀\";dynamic b=\"x\";}}";
+        // a naive split lands mid-surrogate and corrupts the encoding.
+        //
+        // The sibling text is `dynamic a="` + filler + emoji + `";`. The prefix is 11 chars, so
+        // the filler must be 4095 - 11 = 4084 chars for the high surrogate to land at offset 4095
+        // (the last char of chunk 1) and the low surrogate at 4096 (the first char of chunk 2).
+        // Getting this offset wrong silently produces a test that never splits a pair.
+        const string prefix = "dynamic a=\"";
+        var filler = new string('a', 4095 - prefix.Length);
+        var code = "class C{void M(){" + prefix + filler + "😀\";dynamic b=\"x\";}}";
 
         var tree = CSharpSyntaxTree.ParseText(code);
         var root = tree.GetRoot();
