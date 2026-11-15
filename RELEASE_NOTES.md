@@ -14,7 +14,7 @@
   ```
   slopwatch init --force
   ```
-  Review the regenerated `.slopwatch/baseline.json` before committing it. A baseline with no `version` property at all is treated as version 1 and rejected the same way. A real migration path — recording which identity scheme produced each entry — is tracked by #107.
+  Review the regenerated `.slopwatch/baseline.json` before committing it. A baseline with no `version` property at all is treated as version 1 and rejected the same way. If you run `analyze` with a custom `--baseline` path, the error names that path and the remedy becomes `slopwatch init --force --baseline <path>` — `init` now accepts `--baseline` so it can regenerate the file that actually failed. A real migration path — recording which identity scheme produced each entry — is tracked by #107.
 * Baseline churn increases: adding or reordering sibling declarations changes the group fingerprint and invalidates those entries. This is deliberate — it rejects false exemptions rather than silently carrying them forward (#142)
 
 #### 0.4.2 June 10th 2026 ####

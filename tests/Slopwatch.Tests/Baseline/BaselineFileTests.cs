@@ -428,6 +428,65 @@ public class BaselineFileTests
     }
 
     [Fact]
+    public async Task LoadAsync_RemedyNamesCustomBaselinePath()
+    {
+        // init writes .slopwatch/baseline.json by default. A project that runs analyze with a
+        // custom --baseline path would follow the default instruction, regenerate the wrong file,
+        // and hit the same error again. The remedy must name the file that actually failed.
+        var directory = Path.Combine(Path.GetTempPath(), $"slopwatch-custom-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "custom-baseline.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, """
+                {
+                  "version": 1,
+                  "entries": []
+                }
+                """);
+
+            var ex = await Assert.ThrowsAsync<BaselineVersionException>(
+                () => BaselineFile.LoadAsync(path));
+
+            Assert.Contains("--baseline", ex.Message);
+            Assert.Contains("custom-baseline.json", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LoadAsync_RemedyOmitsBaselineFlagForDefaultPath()
+    {
+        // The default path keeps the short form, so the common case stays uncluttered.
+        var directory = Path.Combine(Path.GetTempPath(), $"slopwatch-default-{Guid.NewGuid():N}");
+        var slopwatchDir = Path.Combine(directory, ".slopwatch");
+        Directory.CreateDirectory(slopwatchDir);
+        var path = Path.Combine(slopwatchDir, "baseline.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, """
+                {
+                  "version": 1,
+                  "entries": []
+                }
+                """);
+
+            var ex = await Assert.ThrowsAsync<BaselineVersionException>(
+                () => BaselineFile.LoadAsync(path));
+
+            Assert.Contains("slopwatch init --force", ex.Message);
+            Assert.DoesNotContain("--baseline", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task LoadAsync_AcceptsCurrentSchemaVersion()
     {
         var path = Path.Combine(Path.GetTempPath(), $"slopwatch-v2-{Guid.NewGuid():N}.json");

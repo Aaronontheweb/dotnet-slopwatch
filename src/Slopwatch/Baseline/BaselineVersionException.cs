@@ -41,8 +41,26 @@ public sealed class BaselineVersionException : Exception
     /// </summary>
     public int RequiredVersion { get; }
 
-    private static string BuildMessage(string path, int foundVersion, int requiredVersion) =>
-        $"""
+    private static string BuildMessage(string path, int foundVersion, int requiredVersion)
+    {
+        // The remedy has to name the file that actually failed. init writes
+        // .slopwatch/baseline.json by default, so a project using a custom --baseline path would
+        // follow the default instruction, regenerate the wrong file, and hit this same error
+        // again. Name the path explicitly whenever it is not the default.
+        var isDefaultPath = string.Equals(
+            System.IO.Path.GetFileName(path),
+            "baseline.json",
+            StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(path) ?? string.Empty),
+                ".slopwatch",
+                StringComparison.OrdinalIgnoreCase);
+
+        var remedy = isDefaultPath
+            ? "    slopwatch init --force"
+            : $"    slopwatch init --force --baseline \"{path}\"";
+
+        return $"""
         Baseline file is out of date: {path}
 
         Found schema version {foundVersion}, but this version of slopwatch requires version {requiredVersion}.
@@ -53,9 +71,10 @@ public sealed class BaselineVersionException : Exception
 
         Regenerate the baseline:
 
-            slopwatch init --force
+        {remedy}
 
         This re-scans your code and records current findings under the new identity scheme. Review
         the regenerated file before committing it.
         """;
+    }
 }
