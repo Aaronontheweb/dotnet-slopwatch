@@ -71,6 +71,13 @@ public sealed class ConsoleOutputFormatter : IOutputFormatter
         await writer.WriteAsync(location);
         await writer.WriteAsync(": ");
 
+        // Mark findings that came from generated code so they can be told apart from
+        // ordinary findings when analyzeAndReport mode is active.
+        if (result.IsGeneratedCode)
+        {
+            await writer.WriteAsync("[generated] ");
+        }
+
         // Write severity with color
         var severityColor = result.Severity switch
         {

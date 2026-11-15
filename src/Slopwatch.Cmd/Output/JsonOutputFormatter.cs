@@ -47,7 +47,8 @@ public sealed class JsonOutputFormatter : IOutputFormatter
                 column = r.Column,
                 message = r.Message,
                 codeSnippet = r.CodeSnippet,
-                suggestedFix = r.SuggestedFix
+                suggestedFix = r.SuggestedFix,
+                isGeneratedCode = r.IsGeneratedCode
             })
         };
 

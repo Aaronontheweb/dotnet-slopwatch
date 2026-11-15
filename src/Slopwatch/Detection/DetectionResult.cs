@@ -43,6 +43,16 @@ public sealed record DetectionResult(
 )
 {
     /// <summary>
+    /// Indicates whether the finding came from a file that declares itself generated.
+    /// </summary>
+    /// <remarks>
+    /// Only set when <see cref="Analysis.GeneratedCodeMode.AnalyzeAndReport"/> is active.
+    /// Declared as a body property rather than a positional parameter so the primary
+    /// constructor signature stays compatible with existing consumers.
+    /// </remarks>
+    public bool IsGeneratedCode { get; init; }
+
+    /// <summary>
     /// Returns a formatted string representation suitable for console output.
     /// </summary>
     /// <returns>A formatted detection message.</returns>

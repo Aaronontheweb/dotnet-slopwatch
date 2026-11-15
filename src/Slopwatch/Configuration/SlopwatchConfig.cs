@@ -22,6 +22,44 @@ public sealed class SlopwatchConfig
     /// </summary>
     [JsonPropertyName("globalSuppressions")]
     public List<GlobalSuppression> GlobalSuppressions { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets how files that declare themselves generated are treated.
+    /// </summary>
+    /// <remarks>
+    /// When null, the analyzer default applies (<see cref="Analysis.GeneratedCodeMode.Skip"/>).
+    /// </remarks>
+    [JsonPropertyName("generatedCode")]
+    public GeneratedCodeConfig? GeneratedCode { get; set; }
+}
+
+/// <summary>
+/// Configures how generated code is handled during analysis.
+/// </summary>
+public sealed class GeneratedCodeConfig
+{
+    /// <summary>
+    /// Gets or sets the mode: <c>skip</c>, <c>analyze</c>, or <c>analyzeAndReport</c>.
+    /// </summary>
+    [JsonPropertyName("mode")]
+    public Analysis.GeneratedCodeMode Mode { get; set; } = Analysis.GeneratedCodeMode.Skip;
+
+    /// <summary>
+    /// Gets or sets whether <c>[GeneratedCode]</c> and <c>[DebuggerNonUserCode]</c> attributes
+    /// are used to identify generated types.
+    /// </summary>
+    /// <remarks>
+    /// Default is <c>false</c>. Set to <c>true</c> to also treat attributed types as generated.
+    /// <para>
+    /// Attribute identity cannot be fully resolved without a compilation. Slopwatch analyzes one
+    /// file at a time, so a same-named attribute declared in another file of the same project is
+    /// invisible. In that case a hand-written type could be wrongly skipped, silently dropping
+    /// its findings. That is why this check is opt-in: filename and header detection are decided
+    /// from syntax alone and cannot fail that way.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("detectAttributes")]
+    public bool DetectAttributes { get; set; }
 }
 
 /// <summary>

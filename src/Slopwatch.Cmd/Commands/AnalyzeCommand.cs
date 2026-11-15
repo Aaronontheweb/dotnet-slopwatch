@@ -143,6 +143,18 @@ public sealed class AnalyzeCommand
                 SuppressionChecker.SetConfigPathOverride(null);
             }
 
+            // Apply the generatedCode section from the config file, if present
+            var config = await Configuration.SlopwatchConfigLoader.LoadAsync(
+                rootDirectory,
+                ConfigFile,
+                cancellationToken);
+
+            if (config?.GeneratedCode is not null)
+            {
+                options.GeneratedCodeMode = config.GeneratedCode.Mode;
+                options.DetectGeneratedCodeAttributes = config.GeneratedCode.DetectAttributes;
+            }
+
             // Load baseline (required by default unless --no-baseline or --create-baseline)
             Baseline.BaselineFile? baseline = null;
             var useBaseline = !NoBaseline && string.IsNullOrEmpty(CreateBaseline);
@@ -288,6 +300,7 @@ public sealed class AnalyzeCommand
                     baseline,
                     resolvedBaselinePath,
                     scannedFiles,
+                    analyzer,
                     cancellationToken);
             }
 
@@ -384,6 +397,7 @@ public sealed class AnalyzeCommand
         Baseline.BaselineFile baseline,
         string baselinePath,
         IReadOnlyCollection<string>? scannedFiles,
+        FileAnalyzer analyzer,
         CancellationToken cancellationToken)
     {
         var allResults = new List<DetectionResult>();
@@ -392,10 +406,13 @@ public sealed class AnalyzeCommand
             allResults.Add(result);
         }
 
+        // Read skipped files only after enumeration completes: the analyzer records them
+        // lazily as files are processed.
         var (removed, added, kept) = baseline.SyncWithDetections(
             allResults,
             rootDirectory,
-            scannedFiles);
+            scannedFiles,
+            analyzer.SkippedGeneratedFiles);
 
         if (removed > 0 || added > 0)
         {
