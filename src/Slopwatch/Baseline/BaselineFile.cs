@@ -6,6 +6,7 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Slopwatch.Detection;
 
@@ -203,15 +204,34 @@ public sealed class BaselineFile
         if (!File.Exists(path))
             return null;
 
-        await using var stream = File.OpenRead(path);
-        var baseline = await JsonSerializer.DeserializeAsync<BaselineFile>(stream, JsonOptions, cancellationToken);
+        // Read the raw document first. Version defaults to CurrentVersion so a freshly constructed
+        // baseline serializes correctly, which makes an omitted property indistinguishable from an
+        // explicit current version. A baseline written before versioning existed has no property at
+        // all, and treating it as current would let it load and silently match nothing — the exact
+        // failure the version check exists to prevent. Presence has to be checked on the JSON.
+        JsonNode? document;
+        await using (var stream = File.OpenRead(path))
+        {
+            document = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken);
+        }
+
+        var baseline = document?.Deserialize<BaselineFile>(JsonOptions);
+        if (baseline is null)
+            return null;
+
+        var declaredVersion = document is JsonObject obj && obj.TryGetPropertyValue("version", out var versionNode)
+            ? versionNode?.GetValue<int>()
+            : (int?)null;
 
         // Fail before any analysis runs. A version 1 baseline hashed SW001-SW006 entries from raw
         // syntax text; the current code hashes them from a structural path, so every entry would
         // silently fail to match and the user would see their entire baseline reappear as new
         // findings with no explanation. Refuse to load instead of producing that wall of noise.
-        if (baseline is not null && baseline.Version < CurrentVersion)
-            throw new BaselineVersionException(path, baseline.Version, CurrentVersion);
+        if (declaredVersion is null)
+            throw new BaselineVersionException(path, 1, CurrentVersion);
+
+        if (declaredVersion < CurrentVersion)
+            throw new BaselineVersionException(path, declaredVersion.Value, CurrentVersion);
 
         return baseline;
     }

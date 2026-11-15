@@ -338,51 +338,6 @@ public sealed class StructuralPathCache
         Dictionary<XElement, int>? Ordinals = null);
 
     /// <summary>
-    /// Identifies an XML sibling group: its parent and the fully qualified element name.
-    /// </summary>
-    private readonly record struct XmlKey(XElement Parent, XName Name);
-
-    /// <summary>
-    /// Compares XML keys by parent reference, so distinct parents never share a group.
-    /// </summary>
-    private sealed class XmlKeyComparer : IEqualityComparer<XmlKey>
-    {
-        public static readonly XmlKeyComparer Instance = new();
-
-        public bool Equals(XmlKey x, XmlKey y) =>
-            ReferenceEquals(x.Parent, y.Parent) && x.Name == y.Name;
-
-        public int GetHashCode(XmlKey key) =>
-            HashCode.Combine(
-                System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(key.Parent),
-                key.Name);
-    }
-
-    /// <summary>
-    /// Identifies a sibling group: its parent, the node kind, and the optional named identity.
-    /// </summary>
-    private readonly record struct GroupKey(SyntaxNode Parent, int RawKind, string? NamedIdentity);
-
-    /// <summary>
-    /// Compares group keys by parent reference, so distinct nodes never share a cache entry.
-    /// </summary>
-    private sealed class GroupKeyComparer : IEqualityComparer<GroupKey>
-    {
-        public static readonly GroupKeyComparer Instance = new();
-
-        public bool Equals(GroupKey x, GroupKey y) =>
-            ReferenceEquals(x.Parent, y.Parent)
-            && x.RawKind == y.RawKind
-            && string.Equals(x.NamedIdentity, y.NamedIdentity, StringComparison.Ordinal);
-
-        public int GetHashCode(GroupKey key) =>
-            HashCode.Combine(
-                System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(key.Parent),
-                key.RawKind,
-                key.NamedIdentity is null ? 0 : StringComparer.Ordinal.GetHashCode(key.NamedIdentity));
-    }
-
-    /// <summary>
     /// The ordinal of a node within its group, the group size, and the group fingerprint.
     /// </summary>
     internal readonly record struct GroupInfo(int Ordinal, int Count, string? Fingerprint);

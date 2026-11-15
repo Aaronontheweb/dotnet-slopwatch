@@ -354,6 +354,47 @@ public class BaselineFileTests
     }
 
     [Fact]
+    public async Task LoadAsync_ThrowsWhenVersionPropertyIsAbsent()
+    {
+        // A baseline written before versioning existed has no "version" property at all. The
+        // property defaults to CurrentVersion so a freshly constructed baseline serializes
+        // correctly, which makes an omitted property indistinguishable from an explicit current
+        // version unless presence is checked on the JSON itself. Treating it as current would let
+        // it load and silently match nothing.
+        var path = Path.Combine(Path.GetTempPath(), $"slopwatch-noversion-{Guid.NewGuid():N}.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, """
+                {
+                  "createdAt": "2026-01-01T00:00:00Z",
+                  "updatedAt": "2026-01-01T00:00:00Z",
+                  "entries": [
+                    {
+                      "hash": "b9eaa094c24d14bd",
+                      "ruleId": "SW004",
+                      "filePath": "tests/Foo.cs",
+                      "lineNumber": 10,
+                      "codeSnippet": "Task.Delay(100)",
+                      "message": "old",
+                      "baselinedAt": "2026-01-01T00:00:00Z"
+                    }
+                  ]
+                }
+                """);
+
+            var ex = await Assert.ThrowsAsync<BaselineVersionException>(
+                () => BaselineFile.LoadAsync(path));
+
+            Assert.Equal(BaselineFile.CurrentVersion, ex.RequiredVersion);
+            Assert.Contains("slopwatch init --force", ex.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task LoadAsync_AcceptsCurrentSchemaVersion()
     {
         var path = Path.Combine(Path.GetTempPath(), $"slopwatch-v2-{Guid.NewGuid():N}.json");
