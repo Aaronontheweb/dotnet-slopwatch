@@ -86,6 +86,35 @@ public sealed class BaselineEntry
     }
 
     /// <summary>
+    /// Computes a stable hash for a structural identity, preserving its exact content.
+    /// </summary>
+    /// <param name="ruleId">The rule ID</param>
+    /// <param name="relativePath">Relative file path</param>
+    /// <param name="structuralIdentity">The structural identity produced by the rule</param>
+    /// <returns>A stable SHA256 hash (first 16 chars)</returns>
+    /// <remarks>
+    /// Structural identities must NOT go through <see cref="NormalizeCodeSnippet"/>. That
+    /// normalizer trims every line, which erases significant whitespace inside multiline string
+    /// literals: two findings whose only difference is whitespace within a literal collapse to
+    /// one hash, so baselining the first silently exempts the second. That is exactly the
+    /// collision this identity scheme exists to prevent.
+    ///
+    /// Only line endings are normalized here, so the hash stays stable across platforms without
+    /// discarding content.
+    /// </remarks>
+    public static string ComputeStructuralHash(string ruleId, string relativePath, string structuralIdentity)
+    {
+        var normalizedIdentity = structuralIdentity.Replace("\r\n", "\n").Replace("\r", "\n");
+        var normalizedPath = relativePath.Replace('\\', '/');
+
+        var input = $"{ruleId}|{normalizedPath}|{normalizedIdentity}";
+        var bytes = Encoding.UTF8.GetBytes(input);
+        var hashBytes = SHA256.HashData(bytes);
+
+        return Convert.ToHexString(hashBytes)[..16].ToLowerInvariant();
+    }
+
+    /// <summary>
     /// Normalizes a code snippet for stable hashing.
     /// </summary>
     private static string NormalizeCodeSnippet(string snippet)

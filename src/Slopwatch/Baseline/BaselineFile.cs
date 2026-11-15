@@ -99,6 +99,24 @@ public sealed class BaselineFile
     }
 
     /// <summary>
+    /// Checks if a structural identity is already in the baseline.
+    /// </summary>
+    /// <param name="ruleId">The rule ID</param>
+    /// <param name="relativePath">Relative file path</param>
+    /// <param name="structuralIdentity">The structural identity produced by the rule</param>
+    /// <returns>True if this detection is baselined</returns>
+    /// <remarks>
+    /// Uses <see cref="BaselineEntry.ComputeStructuralHash"/>, which preserves content. The
+    /// snippet overload above trims every line, which erases whitespace inside multiline literals
+    /// and would let one finding's baseline entry exempt a different finding.
+    /// </remarks>
+    public bool IsStructuralBaselined(string ruleId, string relativePath, string structuralIdentity)
+    {
+        var hash = BaselineEntry.ComputeStructuralHash(ruleId, relativePath, structuralIdentity);
+        return HashLookup.Contains(hash);
+    }
+
+    /// <summary>
     /// Checks if a detection result is already in the baseline.
     /// </summary>
     /// <param name="result">The detection result</param>
@@ -107,7 +125,7 @@ public sealed class BaselineFile
     public bool IsBaselined(DetectionResult result, string rootDirectory)
     {
         var relativePath = GetRelativePath(result.FilePath, rootDirectory);
-        return IsBaselined(result.RuleId, relativePath, result.BaselineIdentity);
+        return IsStructuralBaselined(result.RuleId, relativePath, result.BaselineIdentity);
     }
 
     /// <summary>
@@ -120,7 +138,7 @@ public sealed class BaselineFile
     {
         var relativePath = GetRelativePath(result.FilePath, rootDirectory);
         var codeSnippet = result.CodeSnippet ?? string.Empty;
-        var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, result.BaselineIdentity);
+        var hash = BaselineEntry.ComputeStructuralHash(result.RuleId, relativePath, result.BaselineIdentity);
 
         if (HashLookup.Contains(hash))
             return false;
@@ -137,7 +155,9 @@ public sealed class BaselineFile
         };
 
         Entries.Add(entry);
-        HashLookup.Add(hash);
+        // Invalidate rather than mutate: HashLookup may have been materialized before this entry
+        // existed, and mutating a cached set leaves it inconsistent with Entries.
+        _hashLookup = null;
         UpdatedAt = DateTimeOffset.UtcNow;
 
         return true;
@@ -262,7 +282,7 @@ public sealed class BaselineFile
         foreach (var result in results)
         {
             var relativePath = GetRelativePath(result.FilePath, rootDirectory);
-            var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, result.BaselineIdentity);
+            var hash = BaselineEntry.ComputeStructuralHash(result.RuleId, relativePath, result.BaselineIdentity);
             currentHashes.Add(hash);
         }
 
@@ -309,7 +329,7 @@ public sealed class BaselineFile
         foreach (var result in results)
         {
             var relativePath = GetRelativePath(result.FilePath, rootDirectory);
-            var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, result.BaselineIdentity);
+            var hash = BaselineEntry.ComputeStructuralHash(result.RuleId, relativePath, result.BaselineIdentity);
 
             if (!HashLookup.Contains(hash))
             {

@@ -1,35 +1,35 @@
 {
   "version": 2,
-  "createdAt": "2026-11-15T03:04:47.3556854+00:00",
-  "updatedAt": "2026-11-15T03:04:47.3612264+00:00",
-  "description": "Initial baseline created by 'slopwatch init' on 2026-11-15 03:04:47 UTC",
+  "createdAt": "2026-11-15T05:24:55.0757253+00:00",
+  "updatedAt": "2026-11-15T05:24:55.0771606+00:00",
+  "description": "Initial baseline created by 'slopwatch init' on 2026-11-15 05:24:55 UTC",
   "entries": [
     {
-      "hash": "ae5a5de2710b5ecf",
+      "hash": "a1a40d6b9fedd730",
       "ruleId": "SW003",
       "filePath": "tests/Slopwatch.Tests/Baseline/StaleBaselineUpgradeTests.cs",
       "lineNumber": 32,
       "codeSnippet": "catch (IOException)\n        {\n            // Best effort cleanup; a locked temp directory must not fail the test run.\n        }",
       "message": "Empty catch block swallows exceptions without handling",
-      "baselinedAt": "2026-11-15T03:04:47.361062+00:00"
+      "baselinedAt": "2026-11-15T05:24:55.0769893+00:00"
     },
     {
-      "hash": "89af0af867fe002c",
+      "hash": "4bb11280ab0f0834",
       "ruleId": "SW003",
       "filePath": "src/Slopwatch/Analysis/FileAnalyzer.cs",
       "lineNumber": 213,
       "codeSnippet": "catch\n            {\n                // If parsing fails, continue without syntax tree\n                // The content will still be available for text-based analysis\n            }",
       "message": "Empty catch block swallows exceptions without handling",
-      "baselinedAt": "2026-11-15T03:04:47.3612175+00:00"
+      "baselinedAt": "2026-11-15T05:24:55.0771467+00:00"
     },
     {
-      "hash": "b14d64bcc9ec20c0",
+      "hash": "fca2630807251ae1",
       "ruleId": "SW003",
       "filePath": "src/Slopwatch/Analysis/ProjectRootLocator.cs",
       "lineNumber": 38,
       "codeSnippet": "catch\n            {\n                // If we can't access the directory, continue up.\n            }",
       "message": "Empty catch block swallows exceptions without handling",
-      "baselinedAt": "2026-11-15T03:04:47.3612263+00:00"
+      "baselinedAt": "2026-11-15T05:24:55.0771605+00:00"
     }
   ]
 }
