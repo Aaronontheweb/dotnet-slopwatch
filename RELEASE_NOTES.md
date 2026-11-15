@@ -10,6 +10,12 @@
 
 **Behavior Changes:**
 * Generated files that were previously analyzed are now skipped by default. If you rely on findings in generated files, set `generatedCode.mode` to `analyze` or `analyzeAndReport` (#141)
+* **Baseline schema is now version 2, and existing baselines must be regenerated.** SW001–SW006 entries used to hash on the display snippet, so two identical occurrences in one file collapsed to a single identity and baselining one silently exempted the other. Entries now hash on a structural path. A version 1 baseline cannot match the new hashes, so `analyze` stops before running and tells you to regenerate (#142):
+  ```
+  slopwatch init --force
+  ```
+  Review the regenerated `.slopwatch/baseline.json` before committing it. A baseline with no `version` property at all is treated as version 1 and rejected the same way. A real migration path — recording which identity scheme produced each entry — is tracked by #107.
+* Baseline churn increases: adding or reordering sibling declarations changes the group fingerprint and invalidates those entries. This is deliberate — it rejects false exemptions rather than silently carrying them forward (#142)
 
 #### 0.4.2 June 10th 2026 ####
 
