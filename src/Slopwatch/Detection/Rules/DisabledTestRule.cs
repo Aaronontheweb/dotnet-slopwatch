@@ -261,6 +261,16 @@ public sealed class DisabledTestRule : IDetectionRule
                     }
                 }
             }
+            else if (triviaItem.IsKind(SyntaxKind.ElseDirectiveTrivia))
+            {
+                // An #else branch is active whenever the #if condition was false. Without this,
+                // a method in the active #else of an #if false block would be reported as
+                // disabled even though it compiles and runs.
+                if (triviaItem.SpanStart < methodPosition)
+                {
+                    activeIf = false;
+                }
+            }
             else if (triviaItem.IsKind(SyntaxKind.EndIfDirectiveTrivia))
             {
                 if (triviaItem.SpanStart < methodPosition)

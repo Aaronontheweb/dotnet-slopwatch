@@ -55,9 +55,9 @@ public class TestClass
         // derived from the attribute text alone would collide. Identity must also reflect the
         // enclosing method, whose bodies differ here.
         //
-        // Note: this exercises the attribute branch, not the #if false branch. Code inside
-        // #if false is excluded from the syntax tree by Roslyn, so that branch is unreachable
-        // from source text and cannot be covered by a test.
+        // Note: this exercises the attribute branch. The #if false branch is reachable only for a
+        // method in an active #else of an #if false block; code directly inside #if false is
+        // excluded from the syntax tree by Roslyn and cannot be covered from source text.
         const string code = @"
 using Xunit;
 public class TestClass
@@ -78,6 +78,31 @@ public class TestClass
         var results = RunRule(new DisabledTestRule(), CreateCsContext(code, isTestFile: true));
         Assert.Equal(2, results.Count);
         AssertDistinctIdentities(results);
+    }
+
+    [Fact]
+    public void SW001_MethodsInActiveElseBranchAreNotReportedAsDisabled()
+    {
+        // A method in the #else of an #if false block is active code: it compiles and runs. The
+        // directive walk must clear the disabled state at #else, or this method is falsely
+        // reported as disabled.
+        const string code = @"
+using Xunit;
+public class TestClass
+{
+#if false
+    public void NeverCompiled() { }
+#else
+    [Fact]
+    public void ActiveTest()
+    {
+        Assert.True(true);
+    }
+#endif
+}";
+
+        var results = RunRule(new DisabledTestRule(), CreateCsContext(code, isTestFile: true));
+        Assert.Empty(results);
     }
 
     #endregion
