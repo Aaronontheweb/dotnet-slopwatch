@@ -649,7 +649,10 @@ public class BaselineFileTests
             var ex = await Assert.ThrowsAsync<BaselineVersionException>(
                 () => BaselineFile.LoadAsync(path, rootDirectory: directory));
 
-            Assert.Contains("--baseline \"state/custom.json\"", ex.Message);
+            // The remedy prints a platform-native relative path, because the user pastes it into a
+            // shell. Build the expectation with Path.Combine rather than hardcoding a separator.
+            var expectedRelative = Path.Combine("state", "custom.json");
+            Assert.Contains($"--baseline \"{expectedRelative}\"", ex.Message);
             // The header and --directory legitimately show the absolute root; only the --baseline
             // value must be root-relative, so assert on that argument specifically.
             Assert.DoesNotContain($"--baseline \"{directory}", ex.Message);
