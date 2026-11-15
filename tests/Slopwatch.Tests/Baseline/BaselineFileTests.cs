@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Slopwatch.Tests.Baseline;
 
+[Collection(ConsoleRedirectCollection.Name)]
 public class BaselineFileTests
 {
     private static DetectionResult CreateResult(
@@ -740,6 +741,14 @@ public class BaselineFileTests
 
         Assert.NotNull(method);
         Assert.Equal(typeof(Task<BaselineFile?>), method.ReturnType);
+
+        // GetMethod's default binder can satisfy this lookup with an object parameter, so pin the
+        // exact signature rather than trusting the lookup alone.
+        Assert.True(method.IsStatic);
+        var parameters = method.GetParameters();
+        Assert.Equal(2, parameters.Length);
+        Assert.Equal(typeof(string), parameters[0].ParameterType);
+        Assert.Equal(typeof(CancellationToken), parameters[1].ParameterType);
     }
 
     [Fact]

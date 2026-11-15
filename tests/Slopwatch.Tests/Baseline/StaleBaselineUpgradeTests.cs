@@ -13,6 +13,7 @@ namespace Slopwatch.Tests.Baseline;
 /// entry silently stops matching and the user sees their entire baselined backlog reported as new
 /// findings. The command must refuse to run and tell them how to regenerate.
 /// </remarks>
+[Collection(ConsoleRedirectCollection.Name)]
 public class StaleBaselineUpgradeTests : IDisposable
 {
     private readonly string _root;
