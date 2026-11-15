@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Slopwatch.Baseline;
 using Slopwatch.Detection;
 using Slopwatch.Detection.Rules;
 using Xunit;
@@ -247,6 +248,43 @@ public class DynamicKeywordFingerprintTests
 
         for (var i = 0; i < lfPaths.Count; i++)
             Assert.Equal(lfPaths[i], crlfPaths[i]);
+    }
+
+    [Fact]
+    public void MixedLineEndingsDoNotSplitSiblingGroups()
+    {
+        // Two partial declarations whose headers differ ONLY by LF versus CRLF must land in the
+        // SAME sibling group. If the grouping key stays raw, each becomes a singleton whose
+        // rendered paths then collapse to one hash -- baselining one silently exempts the other.
+        //
+        // The attribute must sit on the CLASS, so it participates in the class's declaration
+        // header, which is the grouping key. An attribute on a member would not exercise this.
+        const string lfAttribute =
+            "[System.Diagnostics.CodeAnalysis.SuppressMessage(\"A\", \"B\", Justification = @\"line1\nline2\")]";
+        var crlfAttribute = lfAttribute.Replace("\n", "\r\n");
+
+        var code =
+            lfAttribute + "\npartial class C\n{\n    void M() { }\n}\n"
+            + crlfAttribute + "\npartial class C\n{\n    void M() { }\n}\n";
+
+        var root = CSharpSyntaxTree.ParseText(code).GetRoot();
+        var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
+        Assert.Equal(2, classes.Count);
+
+        // Guard the premise: the raw headers really do differ only by line endings.
+        Assert.NotEqual(classes[0].ToString(), classes[1].ToString());
+        Assert.Equal(
+            classes[0].ToString().Replace("\r\n", "\n"),
+            classes[1].ToString().Replace("\r\n", "\n"));
+
+        var identities = classes.Select(c => StructuralPath.IdentityFor(c)).ToList();
+        var hashes = identities
+            .Select(i => BaselineEntry.ComputeStructuralHash("SW002", "Test.cs", i))
+            .ToList();
+
+        // The hashes must differ. If they collide, baselining the first occurrence exempts the
+        // second -- the exact false negative this identity scheme exists to prevent.
+        Assert.NotEqual(hashes[0], hashes[1]);
     }
 
     /// <summary>

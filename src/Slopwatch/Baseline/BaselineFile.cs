@@ -197,10 +197,35 @@ public sealed class BaselineFile
     /// </summary>
     /// <param name="path">Path to the baseline file</param>
     /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The loaded baseline file, or null if not found</returns>
+    /// <exception cref="BaselineVersionException">
+    /// The file was written by an older schema version whose entry hashes cannot be matched by
+    /// the current identity scheme.
+    /// </exception>
+    /// <remarks>
+    /// This overload preserves the original two-parameter CLR signature. Adding optional
+    /// parameters to the existing method would replace that signature, so a consumer compiled
+    /// against the previous version would throw <see cref="MissingMethodException"/> at run time.
+    /// </remarks>
+    public static Task<BaselineFile?> LoadAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+        => LoadAsync(path, rootDirectory: null, configPath: null, cancellationToken);
+
+    /// <summary>
+    /// Loads a baseline file from disk, with context for building an accurate remedy message.
+    /// </summary>
+    /// <param name="path">Path to the baseline file</param>
     /// <param name="rootDirectory">
     /// The analysis root the baseline was resolved against, when known. Used only to build an
     /// accurate remedy message when the file is out of date.
     /// </param>
+    /// <param name="configPath">
+    /// The configuration file the analysis used, when one was supplied. The remedy must carry it:
+    /// a config that enables generated-code analysis changes which findings exist, so regenerating
+    /// without it records a different baseline than the next analysis expects.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The loaded baseline file, or null if not found</returns>
     /// <exception cref="BaselineVersionException">
     /// The file was written by an older schema version whose entry hashes cannot be matched by
@@ -208,8 +233,9 @@ public sealed class BaselineFile
     /// </exception>
     public static async Task<BaselineFile?> LoadAsync(
         string path,
-        CancellationToken cancellationToken = default,
-        string? rootDirectory = null)
+        string? rootDirectory,
+        string? configPath = null,
+        CancellationToken cancellationToken = default)
     {
         if (!File.Exists(path))
             return null;
@@ -244,10 +270,15 @@ public sealed class BaselineFile
         // silently fail to match and the user would see their entire baseline reappear as new
         // findings with no explanation. Refuse to load instead of producing that wall of noise.
         if (declaredVersion is null)
-            throw new BaselineVersionException(path, 1, CurrentVersion, rootDirectory);
+            throw new BaselineVersionException(path, 1, CurrentVersion, rootDirectory, configPath);
 
         if (declaredVersion < CurrentVersion)
-            throw new BaselineVersionException(path, declaredVersion.Value, CurrentVersion, rootDirectory);
+            throw new BaselineVersionException(
+                path,
+                declaredVersion.Value,
+                CurrentVersion,
+                rootDirectory,
+                configPath);
 
         return document.Deserialize<BaselineFile>(JsonOptions);
     }

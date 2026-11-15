@@ -23,12 +23,18 @@ public sealed class BaselineVersionException : Exception
     /// it: running init from a different directory scans the wrong tree and records paths relative
     /// to the wrong root, so the regenerated baseline would not match the next analysis.
     /// </param>
+    /// <param name="configPath">
+    /// The configuration file the analysis used, when one was supplied. The remedy has to carry it:
+    /// a config that enables generated-code analysis changes which findings exist, so regenerating
+    /// without it records a different baseline than the next analysis expects.
+    /// </param>
     public BaselineVersionException(
         string path,
         int foundVersion,
         int requiredVersion,
-        string? rootDirectory = null)
-        : base(BuildMessage(path, foundVersion, requiredVersion, rootDirectory))
+        string? rootDirectory = null,
+        string? configPath = null)
+        : base(BuildMessage(path, foundVersion, requiredVersion, rootDirectory, configPath))
     {
         Path = path;
         FoundVersion = foundVersion;
@@ -54,7 +60,8 @@ public sealed class BaselineVersionException : Exception
         string path,
         int foundVersion,
         int requiredVersion,
-        string? rootDirectory)
+        string? rootDirectory,
+        string? configPath)
     {
         // The remedy has to name the file that actually failed AND the root it was resolved
         // against. init writes .slopwatch/baseline.json under its -d directory by default, so a
@@ -71,11 +78,18 @@ public sealed class BaselineVersionException : Exception
             : System.IO.Path.GetFullPath(
                 System.IO.Path.Combine(rootDirectory, ".slopwatch", "baseline.json"));
 
+        // Case sensitivity follows the platform's file system. On Linux, .SLOPWATCH/baseline.json
+        // is a different file from .slopwatch/baseline.json, so treating it as the default would
+        // print a remedy that writes the wrong file and leaves the selected baseline stale.
+        var pathComparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
         var isDefaultPath = defaultPath is not null
             && string.Equals(
                 System.IO.Path.GetFullPath(path),
                 defaultPath,
-                StringComparison.OrdinalIgnoreCase);
+                pathComparison);
 
         var directoryArgument = rootDirectory is null
             ? string.Empty
@@ -89,9 +103,17 @@ public sealed class BaselineVersionException : Exception
             ? path
             : System.IO.Path.GetRelativePath(rootDirectory, path);
 
+        // The config path is emitted relative to the root for the same reason as the baseline:
+        // init resolves it against --directory, so an absolute path would be re-resolved.
+        var configArgument = configPath is null
+            ? string.Empty
+            : rootDirectory is null
+                ? $" --config \"{configPath}\""
+                : $" --config \"{System.IO.Path.GetRelativePath(rootDirectory, configPath)}\"";
+
         var remedy = isDefaultPath
-            ? $"    slopwatch init --force{directoryArgument}"
-            : $"    slopwatch init --force{directoryArgument} --baseline \"{baselineArgument}\"";
+            ? $"    slopwatch init --force{directoryArgument}{configArgument}"
+            : $"    slopwatch init --force{directoryArgument}{configArgument} --baseline \"{baselineArgument}\"";
 
         return $"""
         Baseline file is out of date: {path}

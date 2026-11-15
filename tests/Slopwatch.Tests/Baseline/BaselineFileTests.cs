@@ -664,6 +664,71 @@ public class BaselineFileTests
     }
 
     [Fact]
+    public async Task LoadAsync_RemedyPreservesConfigPath()
+    {
+        // A config that enables generated-code analysis changes which findings exist. Regenerating
+        // without it records a different baseline than the next analysis expects, so the remedy
+        // must carry the config the analysis actually used.
+        var directory = Path.Combine(Path.GetTempPath(), $"slopwatch-cfg-{Guid.NewGuid():N}");
+        var stateDir = Path.Combine(directory, "state");
+        Directory.CreateDirectory(stateDir);
+        var path = Path.Combine(stateDir, "custom.json");
+        var configPath = Path.Combine(directory, "custom-config.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, """
+                {
+                  "version": 1,
+                  "entries": []
+                }
+                """);
+            await File.WriteAllTextAsync(configPath, "{}");
+
+            var ex = await Assert.ThrowsAsync<BaselineVersionException>(
+                () => BaselineFile.LoadAsync(path, rootDirectory: directory, configPath: configPath));
+
+            Assert.Contains("--config \"custom-config.json\"", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LoadAsync_TreatsUppercaseSlopwatchDirectoryAsCustomOnLinux()
+    {
+        // Case sensitivity follows the file system. On Linux, .SLOPWATCH/baseline.json is a
+        // different file from .slopwatch/baseline.json, so treating it as the default would print
+        // a remedy that writes the wrong file and leaves the selected baseline stale.
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS())
+            return;
+
+        var directory = Path.Combine(Path.GetTempPath(), $"slopwatch-case-{Guid.NewGuid():N}");
+        var upperDir = Path.Combine(directory, ".SLOPWATCH");
+        Directory.CreateDirectory(upperDir);
+        var path = Path.Combine(upperDir, "baseline.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, """
+                {
+                  "version": 1,
+                  "entries": []
+                }
+                """);
+
+            var ex = await Assert.ThrowsAsync<BaselineVersionException>(
+                () => BaselineFile.LoadAsync(path, rootDirectory: directory));
+
+            Assert.Contains("--baseline", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task LoadAsync_AcceptsCurrentSchemaVersion()
     {
         var path = Path.Combine(Path.GetTempPath(), $"slopwatch-v2-{Guid.NewGuid():N}.json");

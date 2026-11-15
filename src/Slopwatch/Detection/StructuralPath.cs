@@ -88,6 +88,17 @@ public static class StructuralPath
     }
 
     /// <summary>
+    /// Normalizes line endings to <c>\n</c>.
+    /// </summary>
+    /// <remarks>
+    /// Applied to both the sibling-grouping key and the rendered segment. A baseline created on
+    /// Linux must match the same source on Windows, and the grouping key must agree with the
+    /// rendered text or a group can split into singletons whose paths then collide.
+    /// </remarks>
+    private static string NormalizeLineEndings(string text) =>
+        text.Replace("\r\n", "\n").Replace("\r", "\n");
+
+    /// <summary>
     /// Renders one length-prefixed path segment.
     /// </summary>
     private static string RenderSegment(SyntaxNode node, StructuralPathCache? cache)
@@ -101,7 +112,7 @@ public static class StructuralPath
         // text differs between an LF and a CRLF checkout. Normalizing only the final identity
         // string would leave the numeric prefix describing the unnormalized length, so the same
         // source would produce a different path per platform.
-        var normalized = segment.Replace("\r\n", "\n").Replace("\r", "\n");
+        var normalized = NormalizeLineEndings(segment);
 
         // Length prefixes make paths unambiguous even if source text contains '/' or ':'.
         return $"{normalized.Length}:{normalized}";
@@ -219,10 +230,17 @@ public static class StructuralPath
     /// <summary>
     /// Describes every syntax node, with a generic header identity for named declarations.
     /// </summary>
+    /// <remarks>
+    /// Line endings are normalized here, not just in the rendered segment. This description is
+    /// also the sibling-grouping key: two partial declarations whose headers differ only by LF
+    /// versus CRLF must land in the SAME group, or each becomes a singleton whose rendered paths
+    /// then collapse to one hash — reintroducing the false exemption this identity scheme exists
+    /// to prevent. Normalizing only the rendered text would leave the grouping key raw.
+    /// </remarks>
     private static string DescribeNode(SyntaxNode node)
     {
         if (IsNamedDeclaration(node))
-            return $"{node.Kind()} {DeclarationHeader(node)}";
+            return NormalizeLineEndings($"{node.Kind()} {DeclarationHeader(node)}");
 
         return node switch
         {
