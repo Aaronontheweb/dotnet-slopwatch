@@ -299,6 +299,18 @@ public sealed class FileAnalyzer
     /// </summary>
     /// <param name="gitEntryPath">The path to the candidate <c>.git</c> entry.</param>
     /// <returns>True if the entry is a gitfile pointing at a worktree gitdir; otherwise, false.</returns>
+    /// <remarks>
+    /// The directory name is not a reliable discriminator. A submodule added with
+    /// <c>--name worktrees/lib</c> and a checkout made with
+    /// <c>git init --separate-git-dir .../worktrees/checkout</c> both produce gitdirs whose
+    /// parent is named <c>worktrees</c>, yet neither is a linked worktree.
+    /// <para>
+    /// Git's administrative layout is the reliable signal. Only a linked worktree's gitdir
+    /// carries both a <c>commondir</c> file (pointing at the shared common dir) and a
+    /// <c>gitdir</c> file (pointing back at this worktree's <c>.git</c> file). Submodule and
+    /// separate-git-dir administrative directories carry neither.
+    /// </para>
+    /// </remarks>
     private static bool IsLinkedWorktreeMarker(string gitEntryPath)
     {
         // File.Exists is false for a directory, so a main checkout's .git directory is rejected here.
@@ -320,12 +332,35 @@ public sealed class FileAnalyzer
         if (gitDir is null)
             return false;
 
-        // Linked worktrees live at "<common-dir>/worktrees/<name>". Submodules live at
-        // "<super>/.git/modules/<name>" and separate-git-dir checkouts point anywhere, so the
-        // parent directory name is what distinguishes them.
-        var parent = Path.GetDirectoryName(gitDir);
-        return parent is not null
-            && string.Equals(Path.GetFileName(parent), "worktrees", StringComparison.OrdinalIgnoreCase);
+        var commonDirFile = Path.Combine(gitDir, "commondir");
+        var backPointerFile = Path.Combine(gitDir, "gitdir");
+
+        // A nonexistent or unrelated gitdir has neither file, so a stale pointer cannot hide source.
+        if (!File.Exists(commonDirFile) || !File.Exists(backPointerFile))
+            return false;
+
+        // Require the reciprocal pointer to name this .git file, so an administrative directory
+        // belonging to some other checkout cannot suppress analysis here.
+        try
+        {
+            var backPointer = File.ReadAllText(backPointerFile).Trim();
+            if (backPointer.Length == 0)
+                return false;
+
+            var resolvedBack = Path.IsPathRooted(backPointer)
+                ? Path.GetFullPath(backPointer)
+                : Path.GetFullPath(Path.Combine(gitDir, backPointer));
+
+            return string.Equals(
+                TrimTrailingSeparators(resolvedBack),
+                TrimTrailingSeparators(Path.GetFullPath(gitEntryPath)),
+                PathComparison);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -364,13 +399,22 @@ public sealed class FileAnalyzer
     /// <param name="candidate">The candidate path.</param>
     /// <param name="root">The root directory.</param>
     /// <returns>True if <paramref name="candidate"/> is below <paramref name="root"/>.</returns>
-    private static bool IsStrictDescendant(string candidate, string root)
+    /// <remarks>
+    /// A filesystem root (<c>/</c> or <c>C:\</c>) already ends in a separator, so the boundary
+    /// character after it is the first character of the child name, not a separator. Comparing
+    /// that character against a separator would reject every descendant of the root.
+    /// </remarks>
+    internal static bool IsStrictDescendant(string candidate, string root)
     {
         if (candidate.Length <= root.Length)
             return false;
 
         if (!candidate.StartsWith(root, PathComparison))
             return false;
+
+        // The root already ends in a separator, so the prefix match alone proves containment.
+        if (root[^1] == Path.DirectorySeparatorChar || root[^1] == Path.AltDirectorySeparatorChar)
+            return true;
 
         // Require a separator boundary so "/repo-other" is not treated as living under "/repo".
         return candidate[root.Length] == Path.DirectorySeparatorChar
