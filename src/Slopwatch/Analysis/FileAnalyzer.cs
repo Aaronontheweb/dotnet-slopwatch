@@ -256,28 +256,143 @@ public sealed class FileAnalyzer
     /// <param name="rootDirectory">The directory analysis started from.</param>
     /// <returns>True if the file is inside a nested worktree; otherwise, false.</returns>
     /// <remarks>
-    /// A linked worktree is identified by a <c>.git</c> FILE (a gitdir pointer), not a directory.
-    /// The main checkout has a <c>.git</c> directory, so it is never treated as nested. This
-    /// replaces a name-based <c>**/worktrees/**</c> exclude, which skipped any directory that
-    /// happened to be called <c>worktrees</c> — including ordinary source — and reported a clean
-    /// scan for code it never read.
+    /// A linked worktree is identified by a <c>.git</c> FILE whose gitdir pointer resolves to
+    /// <c>&lt;common-dir&gt;/worktrees/&lt;name&gt;</c>. The main checkout has a <c>.git</c>
+    /// directory, so it is never treated as nested. This replaces a name-based
+    /// <c>**/worktrees/**</c> exclude, which skipped any directory that happened to be called
+    /// <c>worktrees</c> — including ordinary source — and reported a clean scan for code it never
+    /// read.
+    /// <para>
+    /// A <c>.git</c> file alone is not proof of a worktree: submodules
+    /// (<c>&lt;super&gt;/.git/modules/&lt;name&gt;</c>) and checkouts made with
+    /// <c>git init --separate-git-dir</c> also use gitfiles, and their source is distinct code
+    /// that must still be analyzed. Unreadable or malformed gitfiles are treated as not-a-worktree
+    /// so the failure mode is analyzing too much rather than silently skipping real source.
+    /// </para>
     /// </remarks>
     private static bool IsInsideNestedWorktree(string filePath, string rootDirectory)
     {
-        var root = Path.GetFullPath(rootDirectory);
+        var root = TrimTrailingSeparators(Path.GetFullPath(rootDirectory));
         var directory = Path.GetDirectoryName(Path.GetFullPath(filePath));
 
-        while (directory is not null && directory.Length > root.Length)
+        while (directory is not null)
         {
-            var gitEntry = Path.Combine(directory, ".git");
-            if (File.Exists(gitEntry))
+            var current = TrimTrailingSeparators(directory);
+
+            // Stop at the analysis root (its own marker is never "nested") and at any path that
+            // is not a strict descendant. Parent-directory include patterns such as
+            // "../sibling/*.cs" match files outside the root; those are not nested worktrees.
+            if (!IsStrictDescendant(current, root))
+                return false;
+
+            if (IsLinkedWorktreeMarker(Path.Combine(current, ".git")))
                 return true;
 
-            directory = Path.GetDirectoryName(directory);
+            directory = Path.GetDirectoryName(current);
         }
 
         return false;
     }
+
+    /// <summary>
+    /// Determines whether a <c>.git</c> entry is a linked-worktree marker.
+    /// </summary>
+    /// <param name="gitEntryPath">The path to the candidate <c>.git</c> entry.</param>
+    /// <returns>True if the entry is a gitfile pointing at a worktree gitdir; otherwise, false.</returns>
+    private static bool IsLinkedWorktreeMarker(string gitEntryPath)
+    {
+        // MUTATION PROBE: old behavior, any .git file counts as a worktree.
+        if (!File.Exists(gitEntryPath))
+            return false;
+
+        string? gitDir;
+        try
+        {
+            gitDir = ReadGitDirPointer(gitEntryPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException)
+        {
+            // Unreadable or malformed: analyze the file rather than silently skipping it.
+            return false;
+        }
+
+        if (gitDir is null)
+            return false;
+
+        // Linked worktrees live at "<common-dir>/worktrees/<name>". Submodules live at
+        // "<super>/.git/modules/<name>" and separate-git-dir checkouts point anywhere, so the
+        // parent directory name is what distinguishes them.
+        var parent = Path.GetDirectoryName(gitDir);
+        return parent is not null
+            && string.Equals(Path.GetFileName(parent), "worktrees", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Reads the gitdir pointer from a <c>.git</c> file.
+    /// </summary>
+    /// <param name="gitEntryPath">The path to the <c>.git</c> file.</param>
+    /// <returns>The absolute gitdir path, or null if the file is not a valid gitfile.</returns>
+    private static string? ReadGitDirPointer(string gitEntryPath)
+    {
+        const string Prefix = "gitdir:";
+
+        string? line;
+        using (var reader = new StreamReader(gitEntryPath))
+        {
+            line = reader.ReadLine();
+        }
+
+        if (line is null || !line.StartsWith(Prefix, StringComparison.Ordinal))
+            return null;
+
+        var pointer = line.Substring(Prefix.Length).Trim();
+        if (pointer.Length == 0)
+            return null;
+
+        // Relative pointers (git worktree --relative-paths) resolve against the .git file's directory.
+        var baseDirectory = Path.GetDirectoryName(Path.GetFullPath(gitEntryPath));
+        if (baseDirectory is null)
+            return null;
+
+        return Path.GetFullPath(Path.Combine(baseDirectory, pointer));
+    }
+
+    /// <summary>
+    /// Determines whether a path is a strict descendant of a root directory.
+    /// </summary>
+    /// <param name="candidate">The candidate path.</param>
+    /// <param name="root">The root directory.</param>
+    /// <returns>True if <paramref name="candidate"/> is below <paramref name="root"/>.</returns>
+    private static bool IsStrictDescendant(string candidate, string root)
+    {
+        if (candidate.Length <= root.Length)
+            return false;
+
+        if (!candidate.StartsWith(root, PathComparison))
+            return false;
+
+        // Require a separator boundary so "/repo-other" is not treated as living under "/repo".
+        return candidate[root.Length] == Path.DirectorySeparatorChar
+            || candidate[root.Length] == Path.AltDirectorySeparatorChar;
+    }
+
+    /// <summary>
+    /// Removes trailing directory separators so path comparisons are not separator-sensitive.
+    /// </summary>
+    /// <param name="path">The path to trim.</param>
+    /// <returns>The path without trailing separators, or the original path if it is a bare root.</returns>
+    private static string TrimTrailingSeparators(string path)
+    {
+        var trimmed = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return trimmed.Length == 0 ? path : trimmed;
+    }
+
+    /// <summary>
+    /// Gets the comparison used for filesystem path equality on the current platform.
+    /// </summary>
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     /// <summary>
     /// Creates a detection context for a file.

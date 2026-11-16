@@ -7,10 +7,16 @@ namespace Slopwatch.Tests.Analysis;
 /// Tests for how <see cref="FileAnalyzer"/> treats nested git worktrees.
 /// </summary>
 /// <remarks>
-/// A linked worktree is identified by a <c>.git</c> FILE (a gitdir pointer). The main checkout
-/// has a <c>.git</c> directory. An earlier default exclude pattern of <c>**/worktrees/**</c>
-/// skipped any directory that happened to be named <c>worktrees</c>, including ordinary source,
-/// and reported a clean scan for code it never read.
+/// A linked worktree is identified by a <c>.git</c> FILE whose gitdir pointer resolves to
+/// <c>&lt;common-dir&gt;/worktrees/&lt;name&gt;</c>. The main checkout has a <c>.git</c>
+/// directory. An earlier default exclude pattern of <c>**/worktrees/**</c> skipped any directory
+/// that happened to be named <c>worktrees</c>, including ordinary source, and reported a clean
+/// scan for code it never read.
+/// <para>
+/// A <c>.git</c> file alone is not proof of a worktree: submodules and
+/// <c>git init --separate-git-dir</c> checkouts also use gitfiles, and their source is distinct
+/// code that must still be analyzed.
+/// </para>
 /// </remarks>
 public class FileAnalyzerWorktreeTests
 {
@@ -49,8 +55,9 @@ public class FileAnalyzerWorktreeTests
     [Fact]
     public async Task NestedGitWorktreeIsSkipped()
     {
-        // A real linked worktree carries a .git FILE. Analyzing it would double-count the same
-        // code, so it is skipped structurally rather than by directory name.
+        // A real linked worktree carries a .git FILE pointing at <common-dir>/worktrees/<name>.
+        // Analyzing it would double-count the same code, so it is skipped structurally rather
+        // than by directory name.
         var root = CreateTempDirectory();
         try
         {
@@ -58,7 +65,7 @@ public class FileAnalyzerWorktreeTests
             Directory.CreateDirectory(nested);
             await File.WriteAllTextAsync(
                 Path.Combine(nested, ".git"),
-                "gitdir: /somewhere/.git/worktrees/wt-branch");
+                $"gitdir: {Path.Combine(root, ".git", "worktrees", "wt-branch")}");
             await File.WriteAllTextAsync(Path.Combine(nested, "Test.cs"), SlopCode);
 
             var results = await AnalyzeAsync(root);
@@ -72,13 +79,136 @@ public class FileAnalyzerWorktreeTests
     }
 
     [Fact]
-    public async Task MainCheckoutWithGitDirectoryIsAnalyzed()
+    public async Task RelativeGitDirPointerIsResolved()
     {
-        // The main checkout has a .git DIRECTORY, not a file. It must never be treated as nested.
+        // git worktree --relative-paths writes a pointer relative to the .git file's directory.
         var root = CreateTempDirectory();
         try
         {
-            Directory.CreateDirectory(Path.Combine(root, ".git"));
+            var nested = Path.Combine(root, "wt-rel");
+            Directory.CreateDirectory(nested);
+            await File.WriteAllTextAsync(
+                Path.Combine(nested, ".git"),
+                "gitdir: ../.git/worktrees/wt-rel");
+            await File.WriteAllTextAsync(Path.Combine(nested, "Test.cs"), SlopCode);
+
+            var results = await AnalyzeAsync(root);
+
+            Assert.DoesNotContain(results, r => r.RuleId == "SW003");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SubmoduleGitFileIsAnalyzed()
+    {
+        // Submodules also use a .git FILE, but point at <super>/.git/modules/<name>. Submodule
+        // source is distinct code, not a duplicate checkout, so it must be analyzed.
+        var root = CreateTempDirectory();
+        try
+        {
+            var submodule = Path.Combine(root, "vendor", "lib");
+            Directory.CreateDirectory(submodule);
+            await File.WriteAllTextAsync(
+                Path.Combine(submodule, ".git"),
+                $"gitdir: {Path.Combine(root, ".git", "modules", "vendor", "lib")}");
+            await File.WriteAllTextAsync(Path.Combine(submodule, "Test.cs"), SlopCode);
+
+            var results = await AnalyzeAsync(root);
+
+            Assert.Contains(results, r => r.RuleId == "SW003");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SeparateGitDirCheckoutIsAnalyzed()
+    {
+        // git init --separate-git-dir writes a .git file pointing outside the tree. That is a
+        // main checkout, not a linked worktree, so its source must be analyzed.
+        var root = CreateTempDirectory();
+        try
+        {
+            var checkout = Path.Combine(root, "checkout");
+            Directory.CreateDirectory(checkout);
+            await File.WriteAllTextAsync(
+                Path.Combine(checkout, ".git"),
+                $"gitdir: {Path.Combine(root, "separate-git-dir")}");
+            await File.WriteAllTextAsync(Path.Combine(checkout, "Test.cs"), SlopCode);
+
+            var results = await AnalyzeAsync(root);
+
+            Assert.Contains(results, r => r.RuleId == "SW003");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MalformedGitFileIsAnalyzed()
+    {
+        // An unreadable or malformed gitfile must not silently hide source. Analyzing too much
+        // is the safe failure mode.
+        var root = CreateTempDirectory();
+        try
+        {
+            var nested = Path.Combine(root, "broken");
+            Directory.CreateDirectory(nested);
+            await File.WriteAllTextAsync(Path.Combine(nested, ".git"), "not a gitfile at all");
+            await File.WriteAllTextAsync(Path.Combine(nested, "Test.cs"), SlopCode);
+
+            var results = await AnalyzeAsync(root);
+
+            Assert.Contains(results, r => r.RuleId == "SW003");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GitDirectoryBelowRootIsAnalyzed()
+    {
+        // A .git DIRECTORY below the analysis root is a nested main checkout, not a linked
+        // worktree. This places the marker strictly inside the walk so the file-versus-directory
+        // discrimination is actually exercised.
+        var root = CreateTempDirectory();
+        try
+        {
+            var nested = Path.Combine(root, "sub");
+            Directory.CreateDirectory(Path.Combine(nested, ".git"));
+            await File.WriteAllTextAsync(Path.Combine(nested, "Test.cs"), SlopCode);
+
+            var results = await AnalyzeAsync(root);
+
+            Assert.Contains(results, r => r.RuleId == "SW003");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LinkedWorktreeRootIsAnalyzed()
+    {
+        // When analysis starts inside a worktree, that worktree is the root, not a nested
+        // duplicate. Its own files must be analyzed.
+        var root = CreateTempDirectory();
+        try
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(root, ".git"),
+                $"gitdir: {Path.Combine(root, "..", ".git", "worktrees", "root-wt")}");
             await File.WriteAllTextAsync(Path.Combine(root, "Test.cs"), SlopCode);
 
             var results = await AnalyzeAsync(root);
@@ -88,6 +218,35 @@ public class FileAnalyzerWorktreeTests
         finally
         {
             Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ParentDirectoryGlobOutsideRootIsAnalyzed()
+    {
+        // Include patterns may reach outside the analysis root ("../sibling/*.cs"). A sibling
+        // whose name is longer than the root's is not a descendant, so it must not be treated
+        // as a nested worktree even when it carries a worktree marker.
+        var parent = CreateTempDirectory();
+        try
+        {
+            var root = Path.Combine(parent, "main");
+            var sibling = Path.Combine(parent, "sibling");
+            Directory.CreateDirectory(root);
+            Directory.CreateDirectory(sibling);
+
+            await File.WriteAllTextAsync(
+                Path.Combine(sibling, ".git"),
+                $"gitdir: {Path.Combine(parent, ".git", "worktrees", "sibling")}");
+            await File.WriteAllTextAsync(Path.Combine(sibling, "Test.cs"), SlopCode);
+
+            var results = await AnalyzeAsync(root, "../sibling/*.cs");
+
+            Assert.Contains(results, r => r.RuleId == "SW003");
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
         }
     }
 
@@ -108,13 +267,18 @@ public class FileAnalyzerWorktreeTests
         return path;
     }
 
-    private static async Task<List<Slopwatch.Detection.DetectionResult>> AnalyzeAsync(string root)
+    private static Task<List<Slopwatch.Detection.DetectionResult>> AnalyzeAsync(string root)
+        => AnalyzeAsync(root, "**/*.cs");
+
+    private static async Task<List<Slopwatch.Detection.DetectionResult>> AnalyzeAsync(
+        string root,
+        params string[] patterns)
     {
         var rules = new Slopwatch.Detection.IDetectionRule[] { new Slopwatch.Detection.Rules.EmptyCatchBlockRule() };
         var analyzer = new FileAnalyzer(rules, new AnalysisOptions());
         var results = new List<Slopwatch.Detection.DetectionResult>();
 
-        await foreach (var result in analyzer.AnalyzeDirectoryAsync(root, new[] { "**/*.cs" }))
+        await foreach (var result in analyzer.AnalyzeDirectoryAsync(root, patterns))
             results.Add(result);
 
         return results;
