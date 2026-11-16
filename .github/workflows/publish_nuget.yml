@@ -6,13 +6,16 @@ on:
       - '*'
 
 permissions:
-  contents: write
+  contents: write # create the GitHub release
+  id-token: write # fetch the OIDC token exchanged for a short-lived NuGet API key
 
 jobs:
   publish-nuget:
 
     name: publish-nuget
     runs-on: ${{ matrix.os }}
+    # Must match the environment in the nuget.org Trusted Publishing policy
+    environment: publish
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -43,8 +46,17 @@ jobs:
     - name: Create Packages
       run:  dotnet pack /p:PackageVersion=${{ github.ref_name }} -c Release -o ./output
 
+    - name: NuGet login (OIDC)
+      # Exchanges the workflow's OIDC token for a short-lived NuGet API key under the
+      # Trusted Publishing policy on nuget.org. NUGET_USER is the nuget.org username of
+      # the package owner. See https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing
+      uses: NuGet/login@v1
+      id: nuget-login
+      with:
+        user: ${{ secrets.NUGET_USER }}
+
     - name: Push Packages to NuGet
-      run: dotnet nuget push "output/*.nupkg" --skip-duplicate -k ${{ secrets.NUGET_KEY }} -s https://api.nuget.org/v3/index.json
+      run: dotnet nuget push "output/*.nupkg" --skip-duplicate -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} -s https://api.nuget.org/v3/index.json
 
     - name: "Extract latest release notes"
       shell: pwsh
