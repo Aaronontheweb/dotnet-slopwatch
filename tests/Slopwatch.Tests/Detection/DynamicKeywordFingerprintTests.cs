@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Slopwatch.Baseline;
 using Slopwatch.Detection;
 using Slopwatch.Detection.Rules;
 using Xunit;
@@ -114,11 +116,292 @@ public class DynamicKeywordFingerprintTests
     /// </summary>
     private static string ReferenceFingerprint(IEnumerable<string> texts)
     {
+        // Line endings are normalized before hashing. The fingerprint is a hex digest, so the
+        // normalization ComputeStructuralHash applies to the identity string cannot reach inside
+        // it: without this, a baseline created on Linux (LF) would never match the same source on
+        // Windows (CRLF). This is a deliberate deviation from the original StringBuilder
+        // implementation, which hashed raw spans.
         var contents = new StringBuilder();
         foreach (var text in texts)
-            contents.Append(text.Length).Append(':').Append(text);
+        {
+            var normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
+            contents.Append(normalized.Length).Append(':').Append(normalized);
+        }
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(contents.ToString())));
+    }
+
+    [Fact]
+    public void FingerprintIsIdenticalForLfAndCrlfSources()
+    {
+        // A baseline created on Linux must match the same source on Windows. The fingerprint is a
+        // hex digest, so the line-ending normalization ComputeStructuralHash applies to the
+        // identity string cannot reach inside it. Without normalization here, every multi-sibling
+        // group would produce a different digest per platform and baselines would not be portable.
+        //
+        // The siblings must SPAN MULTIPLE LINES for this to be meaningful: a group of one-line
+        // statements contains no line breaks inside its spans, so it fingerprints identically
+        // whether or not normalization happens. Two multiline methods are the shape that exposes
+        // the difference.
+        //
+        // The literal is normalized to LF first. A raw string literal inherits the line endings of
+        // the source file, so on a Windows checkout it already contains CRLF and a bare
+        // Replace("\n", "\r\n") would produce CRCRLF.
+        const string raw = """
+            class C
+            {
+                void A()
+                {
+                    dynamic a = 1;
+                }
+
+                void B()
+                {
+                    dynamic b = 2;
+                }
+            }
+            """;
+        var lf = raw.Replace("\r\n", "\n");
+        var crlf = lf.Replace("\n", "\r\n");
+
+        Assert.DoesNotContain('\r', lf);
+        Assert.Contains("\r\n", crlf);
+
+        var lfSiblings = MultiSiblingGroups(lf);
+        var crlfSiblings = MultiSiblingGroups(crlf);
+
+        Assert.NotEmpty(lfSiblings);
+        Assert.Equal(lfSiblings.Count, crlfSiblings.Count);
+
+        // Guard the premise: at least one compared group must actually contain a line break,
+        // otherwise this test would pass for the wrong reason.
+        var comparedMultiline = 0;
+        for (var i = 0; i < lfSiblings.Count; i++)
+        {
+            if (lfSiblings[i].Any(sibling => sibling.ToString().Contains('\n')))
+                comparedMultiline++;
+
+            Assert.Equal(
+                InvokeFingerprint(lfSiblings[i]),
+                InvokeFingerprint(crlfSiblings[i]));
+        }
+
+        Assert.True(
+            comparedMultiline > 0,
+            "No compared sibling group spanned multiple lines, so line-ending normalization was "
+            + "never exercised.");
+    }
+
+    /// <summary>
+    /// Collects every multi-sibling group in a source text, in a stable order.
+    /// </summary>
+    private static List<List<SyntaxNode>> MultiSiblingGroups(string code)
+    {
+        var root = CSharpSyntaxTree.ParseText(code).GetRoot();
+        var groups = new List<List<SyntaxNode>>();
+        foreach (var parent in root.DescendantNodes())
+        {
+            foreach (var group in parent.ChildNodes().GroupBy(child => child.RawKind))
+            {
+                var siblings = group.ToList();
+                if (siblings.Count >= 2)
+                    groups.Add(siblings);
+            }
+        }
+
+        return groups;
+    }
+
+    [Fact]
+    public void StructuralPathIsIdenticalForLfAndCrlfSources()
+    {
+        // A path segment can contain a multiline literal, so the raw segment text differs between
+        // an LF and a CRLF checkout. The length prefix must describe the NORMALIZED text:
+        // normalizing only the final identity string would leave a numeric prefix that still
+        // differs per platform, and the same source would produce a different baseline identity.
+        //
+        // The literal sits in a catch filter rather than an attribute argument. Attributes are
+        // excluded from declaration headers (see DeclarationHeader), so an attribute fixture would
+        // no longer put a newline in any segment and the length prefix would go unexercised.
+        const string raw = """
+            class C
+            {
+                void M()
+                {
+                    try { }
+                    catch (System.Exception e) when (e.Message == @"line1
+            line2")
+                    {
+                        dynamic a = 1;
+                    }
+                }
+            }
+            """;
+        var lf = raw.Replace("\r\n", "\n");
+        var crlf = lf.Replace("\n", "\r\n");
+
+        Assert.DoesNotContain('\r', lf);
+
+        var lfPaths = DynamicPaths(lf);
+        var crlfPaths = DynamicPaths(crlf);
+
+        Assert.NotEmpty(lfPaths);
+        Assert.Equal(lfPaths.Count, crlfPaths.Count);
+
+        // Guard the premise: at least one path must contain a segment whose text spans lines,
+        // otherwise the length prefix was never exercised.
+        Assert.Contains(lfPaths, path => path.Contains('\n'));
+
+        for (var i = 0; i < lfPaths.Count; i++)
+            Assert.Equal(lfPaths[i], crlfPaths[i]);
+    }
+
+    [Fact]
+    public void AddingUnrelatedAttributeDoesNotChangeNestedIdentity()
+    {
+        // A declaration header is an ancestor segment for every finding nested inside it. If
+        // attributes participate in that header, adding an unrelated [Collection], [Trait], or
+        // [SuppressMessage] to a class silently un-baselines every finding in the class -- the
+        // user regenerates a baseline that disagrees with the next analysis.
+        const string withoutAttribute = """
+            class C
+            {
+                void M()
+                {
+                    try { }
+                    catch (System.IO.IOException) { }
+                }
+            }
+            """;
+        const string withAttribute = """
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("A", "B")]
+            class C
+            {
+                void M()
+                {
+                    try { }
+                    catch (System.IO.IOException) { }
+                }
+            }
+            """;
+
+        var before = CatchIdentities(withoutAttribute);
+        var after = CatchIdentities(withAttribute);
+
+        Assert.Single(before);
+        Assert.Single(after);
+        Assert.Equal(before[0], after[0]);
+    }
+
+    [Fact]
+    public void ChangingTheReportedNodesOwnAttributeChangesItsIdentity()
+    {
+        // Excluding attributes from ANCESTOR headers must not make attributes invisible
+        // everywhere. The reported node's own text still carries its attributes, so a finding
+        // reported on an attribute changes identity when that attribute changes.
+        const string first = """
+            class C
+            {
+                [System.Diagnostics.CodeAnalysis.SuppressMessage("A", "B")]
+                void M() { }
+            }
+            """;
+        const string second = """
+            class C
+            {
+                [System.Diagnostics.CodeAnalysis.SuppressMessage("A", "C")]
+                void M() { }
+            }
+            """;
+
+        var firstIdentity = MethodIdentity(first);
+        var secondIdentity = MethodIdentity(second);
+
+        Assert.NotEqual(firstIdentity, secondIdentity);
+    }
+
+    /// <summary>
+    /// Collects the structural identity of every catch clause in a source text.
+    /// </summary>
+    private static List<string> CatchIdentities(string code)
+    {
+        var root = CSharpSyntaxTree.ParseText(code).GetRoot();
+        return root.DescendantNodes()
+            .OfType<CatchClauseSyntax>()
+            .Select(catchClause => StructuralPath.IdentityFor(catchClause))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Collects the structural identity of every method declaration in a source text.
+    /// </summary>
+    private static List<string> MethodIdentities(string code)
+    {
+        var root = CSharpSyntaxTree.ParseText(code).GetRoot();
+        return root.DescendantNodes()
+            .OfType<MethodDeclarationSyntax>()
+            .Select(method => StructuralPath.IdentityFor(method))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns the single method declaration's structural identity in a source text.
+    /// </summary>
+    private static string MethodIdentity(string code)
+    {
+        var identities = MethodIdentities(code);
+        Assert.Single(identities);
+        return identities[0];
+    }
+
+    [Fact]
+    public void MixedLineEndingsDoNotSplitSiblingGroups()
+    {
+        // Two partial declarations whose headers differ ONLY by LF versus CRLF must land in the
+        // SAME sibling group. If the grouping key stays raw, each becomes a singleton whose
+        // rendered paths then collapse to one hash -- baselining one silently exempts the other.
+        //
+        // The attribute must sit on the CLASS, so it participates in the class's declaration
+        // header, which is the grouping key. An attribute on a member would not exercise this.
+        const string lfAttribute =
+            "[System.Diagnostics.CodeAnalysis.SuppressMessage(\"A\", \"B\", Justification = @\"line1\nline2\")]";
+        var crlfAttribute = lfAttribute.Replace("\n", "\r\n");
+
+        var code =
+            lfAttribute + "\npartial class C\n{\n    void M() { }\n}\n"
+            + crlfAttribute + "\npartial class C\n{\n    void M() { }\n}\n";
+
+        var root = CSharpSyntaxTree.ParseText(code).GetRoot();
+        var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
+        Assert.Equal(2, classes.Count);
+
+        // Guard the premise: the raw headers really do differ only by line endings.
+        Assert.NotEqual(classes[0].ToString(), classes[1].ToString());
+        Assert.Equal(
+            classes[0].ToString().Replace("\r\n", "\n"),
+            classes[1].ToString().Replace("\r\n", "\n"));
+
+        var identities = classes.Select(c => StructuralPath.IdentityFor(c)).ToList();
+        var hashes = identities
+            .Select(i => BaselineEntry.ComputeStructuralHash("SW002", "Test.cs", i))
+            .ToList();
+
+        // The hashes must differ. If they collide, baselining the first occurrence exempts the
+        // second -- the exact false negative this identity scheme exists to prevent.
+        Assert.NotEqual(hashes[0], hashes[1]);
+    }
+
+    /// <summary>
+    /// Collects the structural path of every <c>dynamic</c> occurrence in a source text.
+    /// </summary>
+    private static List<string> DynamicPaths(string code)
+    {
+        var root = CSharpSyntaxTree.ParseText(code).GetRoot();
+        return root.DescendantNodes()
+            .OfType<IdentifierNameSyntax>()
+            .Where(identifier => identifier.Identifier.ValueText == "dynamic")
+            .Select(identifier => StructuralPath.ForNode(identifier))
+            .ToList();
     }
 
     /// <summary>
@@ -126,10 +409,13 @@ public class DynamicKeywordFingerprintTests
     /// </summary>
     private static string InvokeFingerprint(List<SyntaxNode> siblings)
     {
-        var method = typeof(DynamicKeywordRule).GetMethod(
-            "FingerprintSiblings",
+        // The fingerprint moved to the shared StructuralPath helper when the identity logic was
+        // extracted out of DynamicKeywordRule. It is internal, so reach it through the assembly
+        // rather than through the rule type.
+        var method = typeof(StructuralPath).GetMethod(
+            "FingerprintNodes",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
-            ?? throw new InvalidOperationException("FingerprintSiblings not found.");
+            ?? throw new InvalidOperationException("FingerprintNodes not found.");
 
         return (string)method.Invoke(null, new object[] { siblings })!;
     }

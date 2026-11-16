@@ -31,6 +31,9 @@ public sealed class InitCommand
     [Option('c', "config", HelpText = "Path to a custom .slopwatch/config.json file")]
     public string? ConfigFile { get; set; }
 
+    [Option("baseline", HelpText = "Path to the baseline file to write (default: .slopwatch/baseline.json). Use this when analyze runs with a custom --baseline path.")]
+    public string? BaselinePath { get; set; }
+
     /// <summary>
     /// Executes the init command.
     /// </summary>
@@ -48,7 +51,15 @@ public sealed class InitCommand
             }
 
             var slopwatchDir = Path.Combine(rootDirectory, ".slopwatch");
-            var baselinePath = Path.Combine(slopwatchDir, "baseline.json");
+            // Honor a custom baseline path so the remedy printed by BaselineVersionException works
+            // for projects that run analyze with --baseline. Without this, init --force always
+            // rewrote .slopwatch/baseline.json and left the custom file stale, so the user would
+            // follow the instruction and hit the same error again.
+            var baselinePath = string.IsNullOrWhiteSpace(BaselinePath)
+                ? Path.Combine(slopwatchDir, "baseline.json")
+                : Path.IsPathRooted(BaselinePath)
+                    ? BaselinePath
+                    : Path.GetFullPath(Path.Combine(rootDirectory, BaselinePath));
             var configExamplePath = Path.Combine(slopwatchDir, "config.json.example");
 
             // Check if already initialized

@@ -77,26 +77,33 @@ public sealed class ProjectFileRule : IDetectionRule
 
         var suppressionChecker = await SuppressionChecker.CreateAsync(context, cancellationToken);
 
+
+        // One cache per analysis: sibling-group work is shared across every occurrence
+
+        // in this file instead of being recomputed per occurrence.
+
+        var identityCache = new StructuralPathCache();
+
         // Check for NoWarn additions
-        await foreach (var result in AnalyzeNoWarn(context, document, suppressions, suppressionChecker, cancellationToken))
+        await foreach (var result in AnalyzeNoWarn(context, document, suppressions, suppressionChecker, identityCache, cancellationToken))
         {
             yield return result;
         }
 
         // Check for TreatWarningsAsErrors disabled
-        await foreach (var result in AnalyzeTreatWarningsAsErrors(context, document, suppressions, suppressionChecker, cancellationToken))
+        await foreach (var result in AnalyzeTreatWarningsAsErrors(context, document, suppressions, suppressionChecker, identityCache, cancellationToken))
         {
             yield return result;
         }
 
         // Check for Nullable disabled
-        await foreach (var result in AnalyzeNullable(context, document, suppressions, suppressionChecker, cancellationToken))
+        await foreach (var result in AnalyzeNullable(context, document, suppressions, suppressionChecker, identityCache, cancellationToken))
         {
             yield return result;
         }
 
         // Check for WarningsAsErrors removal (empty or missing)
-        await foreach (var result in AnalyzeWarningsAsErrors(context, document, suppressions, suppressionChecker, cancellationToken))
+        await foreach (var result in AnalyzeWarningsAsErrors(context, document, suppressions, suppressionChecker, identityCache, cancellationToken))
         {
             yield return result;
         }
@@ -150,6 +157,7 @@ public sealed class ProjectFileRule : IDetectionRule
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
         SuppressionChecker suppressionChecker,
+        StructuralPathCache identityCache,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var noWarnElements = document.Descendants()
@@ -192,7 +200,10 @@ public sealed class ProjectFileRule : IDetectionRule
                         $"Adding warnings to NoWarn: {warnings}",
                         element.ToString(),
                         $"Remove the NoWarn entry and fix the underlying code issues causing {warnings}. If suppression is truly necessary, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
-                    );
+                        )
+                        {
+                            Identity = StructuralPath.IdentityFor(element, identityCache)
+                        };
                 }
             }
             else if (!string.IsNullOrWhiteSpace(value))
@@ -208,7 +219,10 @@ public sealed class ProjectFileRule : IDetectionRule
                     $"Setting NoWarn to suppress warnings: {value}",
                     element.ToString(),
                     $"Remove the NoWarn entry and fix the underlying code issues causing {value}. If suppression is truly necessary, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
-                );
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(element, identityCache)
+                    };
             }
         }
 
@@ -223,6 +237,7 @@ public sealed class ProjectFileRule : IDetectionRule
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
         SuppressionChecker suppressionChecker,
+        StructuralPathCache identityCache,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var elements = document.Descendants()
@@ -259,7 +274,10 @@ public sealed class ProjectFileRule : IDetectionRule
                     "TreatWarningsAsErrors is disabled - warnings will not fail the build",
                     element.ToString(),
                     "Set TreatWarningsAsErrors to true and fix all warnings in the code. If you must disable it, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
-                );
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(element, identityCache)
+                    };
             }
         }
 
@@ -274,6 +292,7 @@ public sealed class ProjectFileRule : IDetectionRule
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
         SuppressionChecker suppressionChecker,
+        StructuralPathCache identityCache,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var elements = document.Descendants()
@@ -310,7 +329,10 @@ public sealed class ProjectFileRule : IDetectionRule
                     "Nullable reference types are disabled",
                     element.ToString(),
                     "Set Nullable to 'enable' and fix nullability warnings. If disabling is intentional, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
-                );
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(element, identityCache)
+                    };
             }
         }
 
@@ -325,6 +347,7 @@ public sealed class ProjectFileRule : IDetectionRule
         XDocument document,
         List<(string RuleId, string Justification, int Line)> suppressions,
         SuppressionChecker suppressionChecker,
+        StructuralPathCache identityCache,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var elements = document.Descendants()
@@ -361,7 +384,10 @@ public sealed class ProjectFileRule : IDetectionRule
                     "WarningsAsErrors is empty - no warnings will be treated as errors",
                     element.ToString(),
                     "Remove the empty WarningsAsErrors element or specify which warnings should be errors. If intentional, add: <!-- slopwatch-ignore: SW005 [your justification here] -->"
-                );
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(element, identityCache)
+                    };
             }
         }
 

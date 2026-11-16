@@ -1,26 +1,35 @@
 {
-  "version": 1,
-  "createdAt": "2026-01-11T16:03:39.2213093+00:00",
-  "updatedAt": "2026-07-14T21:38:40.3877224+00:00",
-  "description": "Initial baseline created by 'slopwatch init' on 2026-01-11 16:03:39 UTC",
+  "version": 2,
+  "createdAt": "2026-11-15T05:24:55.0757253+00:00",
+  "updatedAt": "2026-11-15T05:24:55.0771606+00:00",
+  "description": "Initial baseline created by 'slopwatch init' on 2026-11-15 05:24:55 UTC",
   "entries": [
     {
-      "hash": "7a02787409549c96",
+      "hash": "a1a40d6b9fedd730",
       "ruleId": "SW003",
-      "filePath": "src/Slopwatch/Analysis/FileAnalyzer.cs",
-      "lineNumber": 198,
-      "codeSnippet": "catch\n            {\n                // If parsing fails, continue without syntax tree\n                // The content will still be available for text-based analysis\n            }",
+      "filePath": "tests/Slopwatch.Tests/Baseline/StaleBaselineUpgradeTests.cs",
+      "lineNumber": 32,
+      "codeSnippet": "catch (IOException)\n        {\n            // Best effort cleanup; a locked temp directory must not fail the test run.\n        }",
       "message": "Empty catch block swallows exceptions without handling",
-      "baselinedAt": "2026-01-11T16:03:39.2283094+00:00"
+      "baselinedAt": "2026-11-15T05:24:55.0769893+00:00"
     },
     {
-      "hash": "e45be01c2f7ebb97",
+      "hash": "4bb11280ab0f0834",
+      "ruleId": "SW003",
+      "filePath": "src/Slopwatch/Analysis/FileAnalyzer.cs",
+      "lineNumber": 213,
+      "codeSnippet": "catch\n            {\n                // If parsing fails, continue without syntax tree\n                // The content will still be available for text-based analysis\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-11-15T05:24:55.0771467+00:00"
+    },
+    {
+      "hash": "fca2630807251ae1",
       "ruleId": "SW003",
       "filePath": "src/Slopwatch/Analysis/ProjectRootLocator.cs",
       "lineNumber": 38,
-      "codeSnippet": "catch\r\n            {\r\n                // If we can't access the directory, continue up.\r\n            }",
+      "codeSnippet": "catch\n            {\n                // If we can't access the directory, continue up.\n            }",
       "message": "Empty catch block swallows exceptions without handling",
-      "baselinedAt": "2026-04-13T20:06:27.353673+00:00"
+      "baselinedAt": "2026-11-15T05:24:55.0771605+00:00"
     }
   ]
 }

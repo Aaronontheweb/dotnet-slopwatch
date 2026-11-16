@@ -30,6 +30,10 @@ namespace Slopwatch.Detection;
 /// <param name="SuggestedFix">
 /// Optional suggestion for how to fix the detected issue.
 /// </param>
+/// <param name="Identity">
+/// Optional baseline identity for this detection. When null, <paramref name="CodeSnippet"/> is
+/// used as the identity.
+/// </param>
 public sealed record DetectionResult(
     string RuleId,
     string RuleName,
@@ -42,6 +46,28 @@ public sealed record DetectionResult(
     string? SuggestedFix = null
 )
 {
+    /// <summary>
+    /// Optional baseline identity for this detection. When null, <see cref="CodeSnippet"/> is
+    /// used as the identity.
+    /// </summary>
+    /// <remarks>
+    /// This is an init-only property rather than a constructor parameter on purpose. Adding a
+    /// positional parameter to a record replaces the generated constructor and <c>Deconstruct</c>,
+    /// which breaks binary compatibility for any consumer compiled against the previous shape.
+    /// </remarks>
+    public string? Identity { get; init; }
+
+    /// <summary>
+    /// The string used as input to the baseline hash.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="CodeSnippet"/> serves double duty as display text and hash input, which forces
+    /// a bad trade: readable snippets truncate (and therefore collide), while precise snippets
+    /// are unreadable. <see cref="Identity"/> separates the two. Rules that build a structural
+    /// identity set it here and keep <see cref="CodeSnippet"/> for humans.
+    /// </remarks>
+    public string BaselineIdentity => Identity ?? CodeSnippet ?? string.Empty;
+
     /// <summary>
     /// Indicates whether the finding came from a file that declares itself generated.
     /// </summary>

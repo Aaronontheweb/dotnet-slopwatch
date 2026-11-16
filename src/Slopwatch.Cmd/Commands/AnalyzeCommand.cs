@@ -124,9 +124,10 @@ public sealed class AnalyzeCommand
             var rootDirectory = Directory ?? System.IO.Directory.GetCurrentDirectory();
 
             // Resolve and validate custom suppression config path
+            string? resolvedConfigPath = null;
             if (!string.IsNullOrWhiteSpace(ConfigFile))
             {
-                var resolvedConfigPath = Path.IsPathRooted(ConfigFile)
+                resolvedConfigPath = Path.IsPathRooted(ConfigFile)
                     ? ConfigFile
                     : Path.GetFullPath(Path.Combine(rootDirectory, ConfigFile));
 
@@ -166,7 +167,21 @@ public sealed class AnalyzeCommand
 
             if (useBaseline)
             {
-                baseline = await Baseline.BaselineFile.LoadAsync(resolvedBaselinePath, cancellationToken);
+                try
+                {
+                    baseline = await Baseline.BaselineFile.LoadAsync(
+                        resolvedBaselinePath,
+                        rootDirectory,
+                        resolvedConfigPath,
+                        cancellationToken);
+                }
+                catch (Baseline.BaselineVersionException ex)
+                {
+                    // Print the actionable message without a stack trace. This is a user error
+                    // with a known remedy, not an unexpected failure.
+                    await Console.Error.WriteLineAsync(ex.Message);
+                    return 2;
+                }
 
                 if (baseline is null && !UpdateBaseline)
                 {
