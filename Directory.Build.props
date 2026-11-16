@@ -5,13 +5,30 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <VersionPrefix>0.4.2</VersionPrefix>
-    <PackageReleaseNotes>**Bug Fixes:**
-* `--update-baseline` now correctly adds new entries and removes stale ones — uses hash-based deduplication to keep your baseline in sync (PR #97)
+    <VersionPrefix>0.5.0</VersionPrefix>
+    <PackageReleaseNotes>**Features:**
+* New rule **SW021 — Dynamic Keyword Ban**. Flags any use of the `dynamic` keyword at error severity. Dynamic bypasses compile-time type checking, defeats static analysis, breaks trimming/AOT, and is a common LLM escape hatch for silencing type errors instead of fixing them (#139)
+* Generated code is now skipped by default — files with an `&lt;auto-generated&gt;` header or a generated filename (`*.g.cs`, `*.Designer.cs`, `*.generated.cs`, `*.g.i.cs`, `TemporaryGeneratedFile_*`) are no longer analyzed. These are the same signals Roslyn's analyzers use, so slopwatch skips what the compiler skips (#141)
+* `[GeneratedCode]` / `[DebuggerNonUserCode]` attribute detection is available as an opt-in via `generatedCode.detectAttributes`. It is off by default because attribute identity cannot be resolved without a compilation, and a wrong answer would silently drop hand-written findings (#141)
+* New `generatedCode` section in `.slopwatch/config.json` with `skip` (default), `analyze`, and `analyzeAndReport` modes. `init` and `analyze` both honor it (#141)
+* Generated filename patterns (`*.g.cs`, `*.Designer.cs`, `*.generated.cs`, `*.g.i.cs`) are no longer in the default exclude list — the `generatedCode` mode now owns that decision, so `analyze` mode can reach those files (#141)
+* `analyzeAndReport` findings carry `isGeneratedCode` in JSON output and a `[generated]` marker in console output (#141)
+* `--update-baseline` now preserves baseline entries for files skipped entirely as generated code, so changing modes later does not resurface a wall of findings. Files that are analyzed with individual generated findings filtered out are pruned normally (#141)
 
-**Dependencies:**
-* Bumped Microsoft.CodeAnalysis.CSharp from 5.0.0 to 5.3.0 (PR #92)
-* Bumped Akka.Streams from 1.5.60 to 1.5.68 (PR #88)</PackageReleaseNotes>
+**Behavior Changes:**
+* Generated files that were previously analyzed are now skipped by default. If you rely on findings in generated files, set `generatedCode.mode` to `analyze` or `analyzeAndReport` (#141)
+* **Baseline schema is now version 2, and existing baselines must be regenerated.** SW001–SW006 entries used to hash on the display snippet, so two identical occurrences in one file collapsed to a single identity and baselining one silently exempted the other. Entries now hash on a structural path. A version 1 baseline cannot match the new hashes, so `analyze` stops before running and tells you to regenerate (#142):
+  ```
+  slopwatch init --force
+  ```
+  Review the regenerated `.slopwatch/baseline.json` before committing it. A baseline with no `version` property at all is treated as version 1 and rejected the same way. If you run `analyze` with a custom `--baseline` path, the error names that path and the remedy becomes `slopwatch init --force --baseline &lt;path&gt;` — `init` now accepts `--baseline` so it can regenerate the file that actually failed. A real migration path — recording which identity scheme produced each entry — is tracked by #107.
+* Baseline churn increases: adding or reordering sibling declarations changes the group fingerprint and invalidates those entries. This is deliberate — it rejects false exemptions rather than silently carrying them forward (#142)
+
+**Bug Fixes:**
+* SW021 no longer flags `using dynamic;` and `using static dynamic;`. A using directive's name is a namespace-or-type reference, never a dynamic-typed slot, so both were false positives. `using D = dynamic;` still reports — that aliases the builtin type and is a genuine dynamic slot (#143)
+
+**Performance:**
+* SW021 identity generation is now linear in dynamic occurrence count instead of quadratic. Sibling-group fingerprints and structural path segments are memoized per analysis call, so a file with many `dynamic` occurrences no longer rehashes every sibling and rebuilds every ancestor segment per occurrence (#144)</PackageReleaseNotes>
   </PropertyGroup>
   <PropertyGroup>
     <!-- Target framework versions -->
