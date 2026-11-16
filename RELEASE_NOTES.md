@@ -20,6 +20,7 @@
 * Baseline churn increases: adding or reordering sibling declarations changes the group fingerprint and invalidates those entries. This is deliberate — it rejects false exemptions rather than silently carrying them forward (#142)
 
 **Bug Fixes:**
+* Nested git worktrees are now skipped structurally instead of by directory name. The default exclude list contained `**/worktrees/**`, which skipped **any** directory named `worktrees` — including ordinary source — and reported a clean scan for code it never read. A project keeping source under `worktrees/` got `0 files analyzed` and exit 0. Detection now identifies a linked worktree by Git's administrative layout: a `.git` file whose gitdir carries both a `commondir` file and a reciprocal `gitdir` pointer. Submodules and `git init --separate-git-dir` checkouts also use `.git` files but carry neither, so their source is analyzed (#99, #158)
 * SW021 no longer flags `using dynamic;` and `using static dynamic;`. A using directive's name is a namespace-or-type reference, never a dynamic-typed slot, so both were false positives. `using D = dynamic;` still reports — that aliases the builtin type and is a genuine dynamic slot (#143)
 * SW001 no longer reports a method in the active `#else` or `#elif` branch of an `#if false` block as disabled (#142)
 * `[SlopwatchSuppress]` now works on lambdas. It was silently ignored because the suppression checker had no lambda case (#139)
@@ -37,7 +38,7 @@
 * Bumped Microsoft.Extensions.FileSystemGlobbing from 8.0.0 to 10.0.9
 * Bumped Microsoft.SourceLink.GitHub from 8.0.0 to 10.0.301
 * Bumped Microsoft.NET.Test.Sdk from 18.0.1 to 18.9.0
-* Bumped Akka.Streams from 1.5.68 to 1.5.70
+* Bumped Akka.Streams from 1.5.68 to 1.5.74
 * Bumped dotnet-sdk from 10.0.300 to 10.0.401
 * Bumped actions/checkout from 6.0.2 to 7.0.1
 * Bumped actions/setup-dotnet from 5.3.0 to 6.0.0

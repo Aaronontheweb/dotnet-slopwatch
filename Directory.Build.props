@@ -16,6 +16,7 @@
 * `--update-baseline` now preserves baseline entries for files skipped entirely as generated code, so changing modes later does not resurface a wall of findings. Files that are analyzed with individual generated findings filtered out are pruned normally (#141)
 
 **Behavior Changes:**
+* **SW021 is on by default at error severity, and there is no way to disable a rule.** There is no rule-filter flag and no config key for rule enablement — only `[SlopwatchSuppress]` or baselining. Combined with `--fail-on error` (the default) and hook mode failing on warnings, **any codebase that uses `dynamic` will start failing CI and blocking edits on upgrade.** If that is not what you want, baseline the existing occurrences before upgrading (#139)
 * Generated files that were previously analyzed are now skipped by default. If you rely on findings in generated files, set `generatedCode.mode` to `analyze` or `analyzeAndReport` (#141)
 * **Baseline schema is now version 2, and existing baselines must be regenerated.** SW001–SW006 entries used to hash on the display snippet, so two identical occurrences in one file collapsed to a single identity and baselining one silently exempted the other. Entries now hash on a structural path. A version 1 baseline cannot match the new hashes, so `analyze` stops before running and tells you to regenerate (#142):
   ```
@@ -25,10 +26,30 @@
 * Baseline churn increases: adding or reordering sibling declarations changes the group fingerprint and invalidates those entries. This is deliberate — it rejects false exemptions rather than silently carrying them forward (#142)
 
 **Bug Fixes:**
+* Nested git worktrees are now skipped structurally instead of by directory name. The default exclude list contained `**/worktrees/**`, which skipped **any** directory named `worktrees` — including ordinary source — and reported a clean scan for code it never read. A project keeping source under `worktrees/` got `0 files analyzed` and exit 0. Detection now identifies a linked worktree by Git's administrative layout: a `.git` file whose gitdir carries both a `commondir` file and a reciprocal `gitdir` pointer. Submodules and `git init --separate-git-dir` checkouts also use `.git` files but carry neither, so their source is analyzed (#99, #158)
 * SW021 no longer flags `using dynamic;` and `using static dynamic;`. A using directive's name is a namespace-or-type reference, never a dynamic-typed slot, so both were false positives. `using D = dynamic;` still reports — that aliases the builtin type and is a genuine dynamic slot (#143)
+* SW001 no longer reports a method in the active `#else` or `#elif` branch of an `#if false` block as disabled (#142)
+* `[SlopwatchSuppress]` now works on lambdas. It was silently ignored because the suppression checker had no lambda case (#139)
+* `[SlopwatchSuppress]` is now valid on `struct`, `interface`, `constructor`, `delegate`, `event`, `enum`, destructor, indexer, operator, conversion operator, local function, and accessor. These were compile errors before (#139)
+* `init --config` now forwards the config path to the suppression checker, so suppressions declared in the selected config are honored (#141)
+* `init` now honors the `generatedCode` config, so the baseline it writes agrees with the next `analyze` run (#141)
 
 **Performance:**
-* SW021 identity generation is now linear in dynamic occurrence count instead of quadratic. Sibling-group fingerprints and structural path segments are memoized per analysis call, so a file with many `dynamic` occurrences no longer rehashes every sibling and rebuilds every ancestor segment per occurrence (#144)</PackageReleaseNotes>
+* SW021 identity generation is now linear in dynamic occurrence count instead of quadratic. Sibling-group fingerprints and structural path segments are memoized per analysis call, so a file with many `dynamic` occurrences no longer rehashes every sibling and rebuilds every ancestor segment per occurrence (#144)
+* Structural path caching for SW001–SW006. XML identities dropped from 57 GB to 30 MB at 2,000 findings, and named-method siblings from 3.47 GB / 6.4 s to 2 MB (#142)
+* Baseline creation is now linear. `AddEntry` invalidated the hash lookup after every insertion, which was quadratic in entry count (#142)
+
+**Dependencies:**
+* Bumped Microsoft.CodeAnalysis.CSharp from 5.3.0 to 5.6.0
+* Bumped Microsoft.Extensions.FileSystemGlobbing from 8.0.0 to 10.0.9
+* Bumped Microsoft.SourceLink.GitHub from 8.0.0 to 10.0.301
+* Bumped Microsoft.NET.Test.Sdk from 18.0.1 to 18.9.0
+* Bumped Akka.Streams from 1.5.68 to 1.5.74
+* Bumped dotnet-sdk from 10.0.300 to 10.0.401
+* Bumped actions/checkout from 6.0.2 to 7.0.1
+* Bumped actions/setup-dotnet from 5.3.0 to 6.0.0
+* Bumped codecov/codecov-action from 6 to 7
+* Bumped incrementalist.cmd from 1.2.1 to 1.2.2</PackageReleaseNotes>
   </PropertyGroup>
   <PropertyGroup>
     <!-- Target framework versions -->
