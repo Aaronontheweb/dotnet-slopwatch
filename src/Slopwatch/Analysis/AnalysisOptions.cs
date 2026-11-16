@@ -42,15 +42,16 @@ public sealed class AnalysisOptions
     /// Files matching any of these patterns will be skipped during analysis.
     /// Default patterns exclude build artifacts only. Generated source files are handled by
     /// <see cref="GeneratedCodeMode"/> instead, so that the configured mode can analyze them.
+    /// Nested git worktrees are skipped structurally rather than by name — see
+    /// <see cref="FileAnalyzer"/> — because a directory called <c>worktrees</c> is not
+    /// necessarily a worktree, and excluding it by name silently skipped real source.
     /// </remarks>
     public IReadOnlyList<string> ExcludePatterns { get; set; } = new[]
     {
         "**/obj/**",
         "**/bin/**",
         "**/.vs/**",
-        "**/.git/**",
-        // Git worktrees - avoid analyzing the same code multiple times
-        "**/worktrees/**"
+        "**/.git/**"
     };
 
     /// <summary>

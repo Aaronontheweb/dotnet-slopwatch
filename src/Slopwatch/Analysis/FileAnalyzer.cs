@@ -244,7 +244,39 @@ public sealed class FileAnalyzer
 
         var result = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(directoryPath)));
 
-        return result.Files.Select(f => Path.Combine(directoryPath, f.Path));
+        return result.Files
+            .Select(f => Path.Combine(directoryPath, f.Path))
+            .Where(file => !IsInsideNestedWorktree(file, directoryPath));
+    }
+
+    /// <summary>
+    /// Determines whether a file lives inside a git worktree nested below the analysis root.
+    /// </summary>
+    /// <param name="filePath">The full path to the file.</param>
+    /// <param name="rootDirectory">The directory analysis started from.</param>
+    /// <returns>True if the file is inside a nested worktree; otherwise, false.</returns>
+    /// <remarks>
+    /// A linked worktree is identified by a <c>.git</c> FILE (a gitdir pointer), not a directory.
+    /// The main checkout has a <c>.git</c> directory, so it is never treated as nested. This
+    /// replaces a name-based <c>**/worktrees/**</c> exclude, which skipped any directory that
+    /// happened to be called <c>worktrees</c> — including ordinary source — and reported a clean
+    /// scan for code it never read.
+    /// </remarks>
+    private static bool IsInsideNestedWorktree(string filePath, string rootDirectory)
+    {
+        var root = Path.GetFullPath(rootDirectory);
+        var directory = Path.GetDirectoryName(Path.GetFullPath(filePath));
+
+        while (directory is not null && directory.Length > root.Length)
+        {
+            var gitEntry = Path.Combine(directory, ".git");
+            if (File.Exists(gitEntry))
+                return true;
+
+            directory = Path.GetDirectoryName(directory);
+        }
+
+        return false;
     }
 
     /// <summary>
