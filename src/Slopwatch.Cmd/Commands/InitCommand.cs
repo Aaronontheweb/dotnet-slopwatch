@@ -184,7 +184,7 @@ public sealed class InitCommand
 
             await Console.Out.WriteLineAsync();
             await Console.Out.WriteLineAsync("Next steps:");
-            await Console.Out.WriteLineAsync("  1. Commit .slopwatch/baseline.json to your repository");
+            await Console.Out.WriteLineAsync($"  1. Commit {DisplayPath(baselinePath)} to your repository");
             await Console.Out.WriteLineAsync("  2. Run 'slopwatch analyze' to check for NEW issues");
             await Console.Out.WriteLineAsync("  3. Add slopwatch to your CI/CD pipeline or Claude Code hooks");
 
@@ -204,6 +204,16 @@ public sealed class InitCommand
         {
             Suppression.SuppressionChecker.SetConfigPathOverride(null);
         }
+    }
+
+    /// <summary>
+    /// Renders a path relative to the current directory when it is beneath it, so the printed
+    /// next-steps line names the file the user actually has to commit rather than an absolute path.
+    /// </summary>
+    private static string DisplayPath(string path)
+    {
+        var relative = Path.GetRelativePath(System.IO.Directory.GetCurrentDirectory(), path);
+        return relative.StartsWith("..", StringComparison.Ordinal) ? path : relative;
     }
 
     private static IEnumerable<IDetectionRule> CreateDetectionRules()
