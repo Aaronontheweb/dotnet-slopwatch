@@ -301,7 +301,7 @@ public sealed class FileAnalyzer
     /// <returns>True if the entry is a gitfile pointing at a worktree gitdir; otherwise, false.</returns>
     private static bool IsLinkedWorktreeMarker(string gitEntryPath)
     {
-        // MUTATION PROBE: old behavior, any .git file counts as a worktree.
+        // File.Exists is false for a directory, so a main checkout's .git directory is rejected here.
         if (!File.Exists(gitEntryPath))
             return false;
 
