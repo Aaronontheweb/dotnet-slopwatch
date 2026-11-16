@@ -28,6 +28,12 @@ public sealed class InitCommand
     [Option("min-severity", HelpText = "Minimum severity to baseline: info, warning, error (default: info)")]
     public string MinSeverity { get; set; } = "info";
 
+    [Option('c', "config", HelpText = "Path to a custom .slopwatch/config.json file")]
+    public string? ConfigFile { get; set; }
+
+    [Option("baseline", HelpText = "Path to the baseline file to write (default: .slopwatch/baseline.json). Use this when analyze runs with a custom --baseline path.")]
+    public string? BaselinePath { get; set; }
+
     /// <summary>
     /// Executes the init command.
     /// </summary>
@@ -45,7 +51,15 @@ public sealed class InitCommand
             }
 
             var slopwatchDir = Path.Combine(rootDirectory, ".slopwatch");
-            var baselinePath = Path.Combine(slopwatchDir, "baseline.json");
+            // Honor a custom baseline path so the remedy printed by BaselineVersionException works
+            // for projects that run analyze with --baseline. Without this, init --force always
+            // rewrote .slopwatch/baseline.json and left the custom file stale, so the user would
+            // follow the instruction and hit the same error again.
+            var baselinePath = string.IsNullOrWhiteSpace(BaselinePath)
+                ? Path.Combine(slopwatchDir, "baseline.json")
+                : Path.IsPathRooted(BaselinePath)
+                    ? BaselinePath
+                    : Path.GetFullPath(Path.Combine(rootDirectory, BaselinePath));
             var configExamplePath = Path.Combine(slopwatchDir, "config.json.example");
 
             // Check if already initialized
@@ -84,6 +98,41 @@ public sealed class InitCommand
                 var excludeList = options.ExcludePatterns.ToList();
                 excludeList.AddRange(Exclude);
                 options.ExcludePatterns = excludeList;
+            }
+
+            // Apply the generatedCode section from the config file, if present. init must honor
+            // the same mode as analyze, otherwise the baseline it creates disagrees with the
+            // findings the next analyze run reports.
+            var config = await Configuration.SlopwatchConfigLoader.LoadAsync(
+                rootDirectory,
+                ConfigFile,
+                cancellationToken);
+
+            if (config?.GeneratedCode is not null)
+            {
+                options.GeneratedCodeMode = config.GeneratedCode.Mode;
+                options.DetectGeneratedCodeAttributes = config.GeneratedCode.DetectAttributes;
+            }
+
+            // Forward the config path to suppression checking as well, so suppressions from the
+            // selected config apply during init exactly as they do during analyze.
+            if (!string.IsNullOrWhiteSpace(ConfigFile))
+            {
+                var resolvedConfigPath = Path.IsPathRooted(ConfigFile)
+                    ? ConfigFile
+                    : Path.GetFullPath(Path.Combine(rootDirectory, ConfigFile));
+
+                if (!File.Exists(resolvedConfigPath))
+                {
+                    await Console.Error.WriteLineAsync($"Configuration file not found: {resolvedConfigPath}");
+                    return 2;
+                }
+
+                Suppression.SuppressionChecker.SetConfigPathOverride(resolvedConfigPath);
+            }
+            else
+            {
+                Suppression.SuppressionChecker.SetConfigPathOverride(null);
             }
 
             // Create all detection rules
@@ -135,7 +184,7 @@ public sealed class InitCommand
 
             await Console.Out.WriteLineAsync();
             await Console.Out.WriteLineAsync("Next steps:");
-            await Console.Out.WriteLineAsync("  1. Commit .slopwatch/baseline.json to your repository");
+            await Console.Out.WriteLineAsync($"  1. Commit {DisplayPath(baselinePath)} to your repository");
             await Console.Out.WriteLineAsync("  2. Run 'slopwatch analyze' to check for NEW issues");
             await Console.Out.WriteLineAsync("  3. Add slopwatch to your CI/CD pipeline or Claude Code hooks");
 
@@ -151,6 +200,20 @@ public sealed class InitCommand
             await Console.Error.WriteLineAsync($"Error during initialization: {ex.Message}");
             return 2;
         }
+        finally
+        {
+            Suppression.SuppressionChecker.SetConfigPathOverride(null);
+        }
+    }
+
+    /// <summary>
+    /// Renders a path relative to the current directory when it is beneath it, so the printed
+    /// next-steps line names the file the user actually has to commit rather than an absolute path.
+    /// </summary>
+    private static string DisplayPath(string path)
+    {
+        var relative = Path.GetRelativePath(System.IO.Directory.GetCurrentDirectory(), path);
+        return relative.StartsWith("..", StringComparison.Ordinal) ? path : relative;
     }
 
     private static IEnumerable<IDetectionRule> CreateDetectionRules()
@@ -161,6 +224,7 @@ public sealed class InitCommand
         yield return new TimeoutJigglingRule();
         yield return new ProjectFileRule();
         yield return new PackageVersionOverrideRule();
+        yield return new DynamicKeywordRule();
     }
 
     private static bool TryParseSeverity(string severityText, out DetectionSeverity severity)

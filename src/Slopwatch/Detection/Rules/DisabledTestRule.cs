@@ -66,6 +66,10 @@ public sealed class DisabledTestRule : IDetectionRule
         // Create suppression checker
         var suppressionChecker = await SuppressionChecker.CreateAsync(context, cancellationToken);
 
+        // One cache per analysis: sibling-group work is shared across every occurrence
+        // in this file instead of being recomputed per occurrence.
+        var identityCache = new StructuralPathCache();
+
         // Find all method declarations
         var methods = root.DescendantNodes()
             .OfType<MethodDeclarationSyntax>();
@@ -101,7 +105,10 @@ public sealed class DisabledTestRule : IDetectionRule
                     $"Test method '{method.Identifier.Text}' is disabled with #if false directive",
                     GetMethodSnippet(method),
                     "Remove the #if false directive and fix the test so it passes. If the test must be disabled, use [SlopwatchSuppress(\"SW001\", \"reason with 20+ chars\")]"
-                );
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(method, identityCache)
+                    };
                 continue;
             }
 
@@ -134,7 +141,10 @@ public sealed class DisabledTestRule : IDetectionRule
                     message,
                     disabledAttribute.ToString(),
                     "Remove the Skip/Ignore attribute and fix the test so it passes. If the test must be disabled, use [SlopwatchSuppress(\"SW001\", \"reason with 20+ chars\")]"
-                );
+                    )
+                    {
+                        Identity = StructuralPath.IdentityFor(disabledAttribute, identityCache)
+                    };
             }
         }
     }
@@ -249,6 +259,28 @@ public sealed class DisabledTestRule : IDetectionRule
                     {
                         activeIf = true;
                     }
+                }
+            }
+            else if (triviaItem.IsKind(SyntaxKind.ElseDirectiveTrivia))
+            {
+                // An #else branch is active whenever the #if condition was false. Without this,
+                // a method in the active #else of an #if false block would be reported as
+                // disabled even though it compiles and runs.
+                if (triviaItem.SpanStart < methodPosition)
+                {
+                    activeIf = false;
+                }
+            }
+            else if (triviaItem.IsKind(SyntaxKind.ElifDirectiveTrivia))
+            {
+                // An #elif branch is active when its own condition holds, regardless of the
+                // preceding #if. Treating it like #else would be wrong for `#elif false`, so
+                // evaluate the condition the same way #if does.
+                if (triviaItem.SpanStart < methodPosition)
+                {
+                    var directive = triviaItem.GetStructure() as ElifDirectiveTriviaSyntax;
+                    var condition = directive?.Condition.ToString().Trim();
+                    activeIf = condition == "false" || condition == "FALSE";
                 }
             }
             else if (triviaItem.IsKind(SyntaxKind.EndIfDirectiveTrivia))

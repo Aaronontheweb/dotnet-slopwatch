@@ -6,6 +6,7 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Slopwatch.Detection;
 
@@ -25,10 +26,29 @@ public sealed class BaselineFile
     };
 
     /// <summary>
+    /// The schema version this build writes and requires.
+    /// </summary>
+    public const int CurrentVersion = 2;
+
+    /// <summary>
     /// Schema version for forward compatibility.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Version 2 changed the baseline identity for SW001-SW006 from raw syntax text to a
+    /// structural path (see <see cref="StructuralPath"/>). Entries written by version 1 for those
+    /// rules no longer match and must be regenerated with <c>slopwatch init --force</c>.
+    /// SW021 already used a structural identity in version 1, so its entries are unaffected.
+    /// </para>
+    /// <para>
+    /// Loading a version 1 file throws <see cref="BaselineVersionException"/> before analysis
+    /// runs, so the user gets one clear instruction instead of a wall of already-baselined
+    /// findings. A real migration path — recording which identity scheme produced each entry and
+    /// re-deriving old entries — is tracked by issue #107 (version metadata in baselines).
+    /// </para>
+    /// </remarks>
     [JsonPropertyName("version")]
-    public int Version { get; init; } = 1;
+    public int Version { get; init; } = CurrentVersion;
 
     /// <summary>
     /// When this baseline was created.
@@ -80,6 +100,24 @@ public sealed class BaselineFile
     }
 
     /// <summary>
+    /// Checks if a structural identity is already in the baseline.
+    /// </summary>
+    /// <param name="ruleId">The rule ID</param>
+    /// <param name="relativePath">Relative file path</param>
+    /// <param name="structuralIdentity">The structural identity produced by the rule</param>
+    /// <returns>True if this detection is baselined</returns>
+    /// <remarks>
+    /// Uses <see cref="BaselineEntry.ComputeStructuralHash"/>, which preserves content. The
+    /// snippet overload above trims every line, which erases whitespace inside multiline literals
+    /// and would let one finding's baseline entry exempt a different finding.
+    /// </remarks>
+    public bool IsStructuralBaselined(string ruleId, string relativePath, string structuralIdentity)
+    {
+        var hash = BaselineEntry.ComputeStructuralHash(ruleId, relativePath, structuralIdentity);
+        return HashLookup.Contains(hash);
+    }
+
+    /// <summary>
     /// Checks if a detection result is already in the baseline.
     /// </summary>
     /// <param name="result">The detection result</param>
@@ -88,7 +126,7 @@ public sealed class BaselineFile
     public bool IsBaselined(DetectionResult result, string rootDirectory)
     {
         var relativePath = GetRelativePath(result.FilePath, rootDirectory);
-        return IsBaselined(result.RuleId, relativePath, result.CodeSnippet ?? string.Empty);
+        return IsStructuralBaselined(result.RuleId, relativePath, result.BaselineIdentity);
     }
 
     /// <summary>
@@ -101,7 +139,7 @@ public sealed class BaselineFile
     {
         var relativePath = GetRelativePath(result.FilePath, rootDirectory);
         var codeSnippet = result.CodeSnippet ?? string.Empty;
-        var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
+        var hash = BaselineEntry.ComputeStructuralHash(result.RuleId, relativePath, result.BaselineIdentity);
 
         if (HashLookup.Contains(hash))
             return false;
@@ -118,7 +156,12 @@ public sealed class BaselineFile
         };
 
         Entries.Add(entry);
-        HashLookup.Add(hash);
+        // Mutate the lookup when it is already materialized. Invalidating it instead would make
+        // the next AddEntry rebuild the set from every preceding entry, so creating a baseline
+        // with N findings did O(N^2) work: measured 1.70 GB allocated at 8,000 entries versus
+        // 5.63 MB when the set is kept current. The set is only ever derived from Entries, so
+        // adding the new hash keeps it consistent.
+        _hashLookup?.Add(hash);
         UpdatedAt = DateTimeOffset.UtcNow;
 
         return true;
@@ -155,14 +198,89 @@ public sealed class BaselineFile
     /// <param name="path">Path to the baseline file</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The loaded baseline file, or null if not found</returns>
-    public static async Task<BaselineFile?> LoadAsync(string path, CancellationToken cancellationToken = default)
+    /// <exception cref="BaselineVersionException">
+    /// The file was written by an older schema version whose entry hashes cannot be matched by
+    /// the current identity scheme.
+    /// </exception>
+    /// <remarks>
+    /// This overload preserves the original two-parameter CLR signature. Adding optional
+    /// parameters to the existing method would replace that signature, so a consumer compiled
+    /// against the previous version would throw <see cref="MissingMethodException"/> at run time.
+    /// </remarks>
+    public static Task<BaselineFile?> LoadAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+        => LoadAsync(path, rootDirectory: null, configPath: null, cancellationToken);
+
+    /// <summary>
+    /// Loads a baseline file from disk, with context for building an accurate remedy message.
+    /// </summary>
+    /// <param name="path">Path to the baseline file</param>
+    /// <param name="rootDirectory">
+    /// The analysis root the baseline was resolved against, when known. Used only to build an
+    /// accurate remedy message when the file is out of date.
+    /// </param>
+    /// <param name="configPath">
+    /// The configuration file the analysis used, when one was supplied. The remedy must carry it:
+    /// a config that enables generated-code analysis changes which findings exist, so regenerating
+    /// without it records a different baseline than the next analysis expects.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The loaded baseline file, or null if not found</returns>
+    /// <exception cref="BaselineVersionException">
+    /// The file was written by an older schema version whose entry hashes cannot be matched by
+    /// the current identity scheme.
+    /// </exception>
+    public static async Task<BaselineFile?> LoadAsync(
+        string path,
+        string? rootDirectory,
+        string? configPath = null,
+        CancellationToken cancellationToken = default)
     {
         if (!File.Exists(path))
             return null;
 
-        await using var stream = File.OpenRead(path);
-        var baseline = await JsonSerializer.DeserializeAsync<BaselineFile>(stream, JsonOptions, cancellationToken);
-        return baseline;
+        // Read the raw document first. Version defaults to CurrentVersion so a freshly constructed
+        // baseline serializes correctly, which makes an omitted property indistinguishable from an
+        // explicit current version. A baseline written before versioning existed has no property at
+        // all, and treating it as current would let it load and silently match nothing — the exact
+        // failure the version check exists to prevent. Presence has to be checked on the JSON.
+        JsonNode? document;
+        await using (var stream = File.OpenRead(path))
+        {
+            document = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken);
+        }
+
+        if (document is null)
+            return null;
+
+        // Resolve the declared version BEFORE deserializing. Deserializing first would let a
+        // malformed version value (null, a string, an object) surface as a raw JsonException from
+        // the serializer instead of the actionable "regenerate your baseline" message. A version
+        // that is present but not an integer is treated as unreadable, which is the same remedy.
+        int? declaredVersion = null;
+        if (document is JsonObject obj && obj.TryGetPropertyValue("version", out var versionNode))
+        {
+            if (versionNode is JsonValue value && value.TryGetValue<int>(out var parsed))
+                declaredVersion = parsed;
+        }
+
+        // Fail before any analysis runs. A version 1 baseline hashed SW001-SW006 entries from raw
+        // syntax text; the current code hashes them from a structural path, so every entry would
+        // silently fail to match and the user would see their entire baseline reappear as new
+        // findings with no explanation. Refuse to load instead of producing that wall of noise.
+        if (declaredVersion is null)
+            throw new BaselineVersionException(path, 1, CurrentVersion, rootDirectory, configPath);
+
+        if (declaredVersion < CurrentVersion)
+            throw new BaselineVersionException(
+                path,
+                declaredVersion.Value,
+                CurrentVersion,
+                rootDirectory,
+                configPath);
+
+        return document.Deserialize<BaselineFile>(JsonOptions);
     }
 
     /// <summary>
@@ -221,18 +339,51 @@ public sealed class BaselineFile
     /// <param name="scannedFiles">Optional list of files included in the current scan;
     /// only entries for these files are considered for stale removal.</param>
     /// <returns>Tuple of (removed, added, kept) counts</returns>
+    /// <remarks>
+    /// Retained as a distinct overload so previously compiled consumers that bind the
+    /// three-parameter signature keep working.
+    /// </remarks>
     public (int removed, int added, int kept) SyncWithDetections(
         IEnumerable<DetectionResult> results,
         string rootDirectory,
         IEnumerable<string>? scannedFiles = null)
+    {
+        return SyncWithDetections(results, rootDirectory, scannedFiles, skippedFiles: null);
+    }
+
+    /// <summary>
+    /// Synchronizes the baseline with current detection results - removes stale entries
+    /// that no longer exist in the provided scan scope and adds any new detections.
+    /// </summary>
+    /// <param name="results">The current detection results</param>
+    /// <param name="rootDirectory">Root directory for computing relative paths</param>
+    /// <param name="scannedFiles">Optional list of files included in the current scan;
+    /// only entries for these files are considered for stale removal.</param>
+    /// <param name="skippedFiles">Optional list of files that were present in the scan but
+    /// deliberately not analyzed (for example, generated code). Entries for these files are
+    /// never removed, so changing the analysis configuration later does not resurface findings.</param>
+    /// <returns>Tuple of (removed, added, kept) counts</returns>
+    /// <remarks>
+    /// Preservation is scoped to whole files. A file that was only partially analyzed — some
+    /// findings filtered out as generated, others reported — is pruned normally. The baseline
+    /// hash is rule + path + snippet, which cannot distinguish two identical snippets in the
+    /// same file, and line numbers are neither stable under edits nor unique within a line.
+    /// Preserving individual findings would therefore risk shielding a stale hand-written entry,
+    /// which is a false negative. Pruning a live generated entry is only noise, so the
+    /// conservative direction is to prune.
+    /// </remarks>
+    public (int removed, int added, int kept) SyncWithDetections(
+        IEnumerable<DetectionResult> results,
+        string rootDirectory,
+        IEnumerable<string>? scannedFiles,
+        IEnumerable<string>? skippedFiles)
     {
         // Build a set of all current hashes from the detection results
         var currentHashes = new HashSet<string>();
         foreach (var result in results)
         {
             var relativePath = GetRelativePath(result.FilePath, rootDirectory);
-            var codeSnippet = result.CodeSnippet ?? string.Empty;
-            var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
+            var hash = BaselineEntry.ComputeStructuralHash(result.RuleId, relativePath, result.BaselineIdentity);
             currentHashes.Add(hash);
         }
 
@@ -250,6 +401,20 @@ public sealed class BaselineFile
             }
         }
 
+        HashSet<string>? skippedFilePaths = null;
+        if (skippedFiles is not null)
+        {
+            var normalizedSkippedPaths = skippedFiles
+                .Select(path => GetRelativePath(path, rootDirectory))
+                .Select(path => path.Replace('\\', '/'))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (normalizedSkippedPaths.Count > 0)
+            {
+                skippedFilePaths = normalizedSkippedPaths;
+            }
+        }
+
         var removed = 0;
         var kept = 0;
 
@@ -258,6 +423,14 @@ public sealed class BaselineFile
         {
             if (scopedFilePaths is not null && !scopedFilePaths.Contains(e.FilePath))
             {
+                return false;
+            }
+
+            // Files that were skipped rather than analyzed keep their entries: the absence of
+            // findings reflects the configuration, not a fix.
+            if (skippedFilePaths is not null && skippedFilePaths.Contains(e.FilePath))
+            {
+                kept++;
                 return false;
             }
 
@@ -279,8 +452,7 @@ public sealed class BaselineFile
         foreach (var result in results)
         {
             var relativePath = GetRelativePath(result.FilePath, rootDirectory);
-            var codeSnippet = result.CodeSnippet ?? string.Empty;
-            var hash = BaselineEntry.ComputeHash(result.RuleId, relativePath, codeSnippet);
+            var hash = BaselineEntry.ComputeStructuralHash(result.RuleId, relativePath, result.BaselineIdentity);
 
             if (!HashLookup.Contains(hash))
             {
@@ -290,7 +462,7 @@ public sealed class BaselineFile
                     RuleId = result.RuleId,
                     FilePath = relativePath,
                     LineNumber = result.LineNumber,
-                    CodeSnippet = codeSnippet,
+                    CodeSnippet = result.CodeSnippet ?? string.Empty,
                     Message = result.Message,
                     BaselinedAt = DateTimeOffset.UtcNow
                 };

@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0
 
       - name: "Install .NET SDK"
-        uses: actions/setup-dotnet@v5.3.0
+        uses: actions/setup-dotnet@v6.0.0
         with:
           global-json-file: "./global.json"
 
@@ -50,7 +50,7 @@ jobs:
         run: dotnet test -c Release --collect:"XPlat Code Coverage" --results-directory ./coverage
 
       - name: "Upload coverage reports"
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           directory: ./coverage
           fail_ci_if_error: false
