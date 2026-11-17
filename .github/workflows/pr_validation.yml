@@ -63,7 +63,11 @@ jobs:
       # Dogfooding - run slopwatch on itself
       - name: "Install slopwatch tool (dogfooding)"
         if: matrix.os == 'ubuntu-latest'
-        run: dotnet tool install --global --add-source ./bin/nuget Slopwatch.Cmd
+        # --source REPLACES all configured sources, so the locally built package is
+        # the only candidate. --add-source would merely append to nuget.org, and
+        # NuGet picks the highest version across all sources - which silently
+        # installed the published package instead of the one just built.
+        run: dotnet tool install --global --source ./bin/nuget Slopwatch.Cmd
 
       - name: "Run slopwatch on itself"
         if: matrix.os == 'ubuntu-latest'
