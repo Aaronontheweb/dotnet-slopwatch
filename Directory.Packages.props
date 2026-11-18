@@ -6,7 +6,7 @@
     <CommandLineParserVersion>2.9.1</CommandLineParserVersion>
     <FileSystemGlobbingVersion>10.0.9</FileSystemGlobbingVersion>
     <XunitVersion>2.9.3</XunitVersion>
-    <XunitRunnerVersion>3.1.5</XunitRunnerVersion>
+    <XunitRunnerVersion>4.0.1</XunitRunnerVersion>
     <TestSdkVersion>18.12.0</TestSdkVersion>
     <CoverletVersion>10.0.1</CoverletVersion>
     <AkkaVersion>1.5.75</AkkaVersion>
