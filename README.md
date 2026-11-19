@@ -201,6 +201,151 @@ Claude will see the formatted error message and can then fix the issue properly.
   displayName: 'Run Slopwatch'
 ```
 
+## Suppressing Findings in Code
+
+Config-file suppressions cover whole paths. When a single line or declaration is the exception, suppress it where the code lives — no config edit, and the justification sits next to the code it excuses.
+
+There are three in-code mechanisms: inline comments, the `[SlopwatchSuppress]` attribute, and XML comments in project files. All of them require a justification of at least 20 characters. A shorter one is silently ignored, so the finding still reports.
+
+### Inline Comments
+
+Put a `slopwatch-ignore` comment on the line directly above the finding:
+
+```csharp
+// slopwatch-ignore: SW004 Testing rate limiter behavior requires actual time delays
+await Task.Delay(1000);
+```
+
+A trailing comment on the same line works too:
+
+```csharp
+await Task.Delay(1000); // slopwatch-ignore: SW004 Testing rate limiter behavior requires actual time delays
+```
+
+The comment covers the line it sits on and the line immediately after it. It must be a `//` comment — `/* */` blocks are not parsed.
+
+To cover a range, bracket it:
+
+```csharp
+// slopwatch-ignore-start: SW002 Legacy interop requires suppressing obsolete API warnings
+#pragma warning disable CS0618
+public void CallObsoleteApi() { ... }
+#pragma warning restore CS0618
+// slopwatch-ignore-end
+```
+
+Rules for both forms:
+
+- Rule ID must be `SW###` (`SW001`, not `sw1`).
+- Matching is case-insensitive: `SLOPWATCH-IGNORE` works.
+- Extra whitespace around the colon and rule ID is fine.
+- One rule per comment. Each comment covers only its own line and the next, so stacking two comments does not suppress two rules on one line — the outer one stops short. Use the attribute or a block instead.
+- An unterminated `slopwatch-ignore-start` suppresses nothing.
+- An `slopwatch-ignore-end` with no matching start is ignored.
+
+**Placement matters, and it follows the reported line, not the declaration.** SW003 reports the line of the `catch` keyword, so a comment above the method signature does not suppress it:
+
+```csharp
+// ❌ Does not suppress — SW003 reports the catch line, not the signature
+// slopwatch-ignore: SW003 Optional config file - FileNotFoundException is expected here
+public void LoadConfig()
+{
+    try { ... }
+    catch (FileNotFoundException) { }
+}
+
+// ✅ Suppresses — comment sits directly above the reported line
+public void LoadConfig()
+{
+    try { ... }
+    // slopwatch-ignore: SW003 Optional config file - FileNotFoundException is expected here
+    catch (FileNotFoundException) { }
+}
+```
+
+SW001 reports the line of the `Skip`/`Ignore` attribute, so the comment goes above the attribute, not above the method name.
+
+### The `[SlopwatchSuppress]` Attribute
+
+For a whole declaration, use the attribute:
+
+```csharp
+[SlopwatchSuppress(
+    "SW021",
+    "COM interop requires late-bound dispatch through IDispatch",
+    "Interop",
+    issueUrl: "https://github.com/myorg/myrepo/issues/1234")]
+public void CallComObject(dynamic comObject) { ... }
+```
+
+**Scope is the nearest enclosing declaration, not the whole type.** A class-level attribute does not reach into its methods — a finding inside a method body needs the attribute on that method. This is deliberate: it keeps suppressions narrow.
+
+```csharp
+// ❌ Does not suppress the empty catch inside the method
+[SlopwatchSuppress("SW003", "Optional config file - FileNotFoundException is expected", "External")]
+public class ConfigLoader
+{
+    public void Load() { try { ... } catch (FileNotFoundException) { } }
+}
+
+// ✅ Suppresses — attribute sits on the method that contains the finding
+public class ConfigLoader
+{
+    [SlopwatchSuppress("SW003", "Optional config file - FileNotFoundException is expected", "External")]
+    public void Load() { try { ... } catch (FileNotFoundException) { } }
+}
+```
+
+The attribute is matched by name, not by type identity. That means you can either reference the real package:
+
+```bash
+dotnet add package Slopwatch
+```
+
+…or declare a local stub with no package dependency at all, which is what several Petabridge repos do:
+
+```csharp
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+internal sealed class SlopwatchSuppressAttribute(string ruleId, string reason) : Attribute
+{
+    public string RuleId { get; } = ruleId;
+    public string Reason { get; } = reason;
+}
+```
+
+The stub form is convenient for test projects that don't otherwise depend on Slopwatch. The tradeoff: the real constructor validates the rule ID, justification length, category, and rejects generic justifications like `"false positive"`. A stub validates nothing, so a typo'd rule ID or a lazy justification silently does nothing.
+
+With the real package, the constructor throws on a bad rule ID, a short justification, an unknown category, or a generic justification. That is deliberate: the attribute is meant to be hard for an LLM to fabricate.
+
+| Argument | Required | Notes |
+|----------|----------|-------|
+| `ruleId` | yes | `SW###` format |
+| `justification` | yes | 20+ characters, specific |
+| `category` | yes | `Platform`, `Interop`, `External`, `Generated`, `TDD`, `Performance`, `Testing`, `Legacy`, `Library` |
+| `issueUrl` | no | Tracking ticket |
+| `reviewer` | no | Who approved it |
+
+### Project Files
+
+`.csproj`, `.props`, and `.targets` files take an XML comment on the line directly above the flagged element:
+
+```xml
+<!-- slopwatch-ignore: SW005 This legacy project requires warnings disabled to build -->
+<NoWarn>$(NoWarn);CS1591</NoWarn>
+```
+
+This covers SW005 and SW006. Block form is not supported in XML, and the comment must be on the immediately preceding line.
+
+### Which One to Use
+
+| Mechanism | Scope | Use when |
+|-----------|-------|----------|
+| Inline comment | One line, or a bracketed range | A single statement or short block is the exception |
+| `[SlopwatchSuppress]` | Nearest enclosing declaration | The exception is the method, property, field, or lambda |
+| Config file | Path glob | A directory or file pattern is the exception |
+
+All three are checked in that order — attribute, then inline comment, then config file. Any match suppresses the finding.
+
 ## Configuration
 
 Create a `.slopwatch/config.json` file to define suppressions:
